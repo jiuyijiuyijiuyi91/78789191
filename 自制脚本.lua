@@ -12,12 +12,45 @@ local Tabs = {
     Announcement = Window:AddTab("公告", "megaphone"),
     Main = Window:AddTab("主页", "user"),
     Visual = Window:AddTab("视觉", "eye"),
-    ["UI Settings"] = Window:AddTab("UI设置", "settings"),
 }
 
 -- 公告
 local AnnouncementBox = Tabs.Announcement:AddLeftGroupbox("公告")
 AnnouncementBox:AddLabel("本脚本为缝合脚本")
+
+-- 信息功能
+local InfoBox = Tabs.Announcement:AddLeftGroupbox("信息")
+local lp = game.Players.LocalPlayer
+InfoBox:AddLabel("用户名: " .. lp.Name)
+InfoBox:AddLabel("显示名称: " .. lp.DisplayName)
+InfoBox:AddLabel("用户ID: " .. lp.UserId)
+InfoBox:AddLabel("账户年龄(天): " .. lp.AccountAge)
+InfoBox:AddLabel("语言: " .. lp.LocaleId)
+local execName = "未知"
+pcall(function() execName = identifyexecutor() end)
+InfoBox:AddLabel("注入器: " .. execName)
+InfoBox:AddLabel("游戏ID: " .. tostring(game.PlaceId))
+InfoBox:AddLabel("服务器ID: " .. tostring(game.JobId))
+InfoBox:AddLabel("Roblox版本: " .. version())
+InfoBox:AddLabel("设备: " .. (game:GetService("UserInputService").TouchEnabled and "移动设备" or "电脑"))
+
+InfoBox:AddButton("复制所有信息", function()
+    local info = {}
+    table.insert(info, "=== XJW中心 - 信息 ===")
+    table.insert(info, "用户名: " .. lp.Name)
+    table.insert(info, "显示名称: " .. lp.DisplayName)
+    table.insert(info, "用户ID: " .. lp.UserId)
+    table.insert(info, "账户年龄(天): " .. lp.AccountAge)
+    table.insert(info, "注入器: " .. execName)
+    table.insert(info, "游戏ID: " .. tostring(game.PlaceId))
+    table.insert(info, "服务器ID: " .. tostring(game.JobId))
+    table.insert(info, "Roblox版本: " .. version())
+    table.insert(info, "=== " .. os.date("%Y-%m-%d %H:%M:%S") .. " ===")
+    pcall(function() setclipboard(table.concat(info, "\n")) end)
+    pcall(function()
+        game.StarterGui:SetCore("SendNotification", { Title = "成功", Text = "信息已复制到剪贴板", Duration = 3 })
+    end)
+end)
 
 -- 主页
 local FeatureBox = Tabs.Main:AddRightGroupbox("功能")
@@ -33,212 +66,798 @@ FeatureBox:AddButton("祖国人汉化", function()
     loadstring(game:HttpGet("https://raw.githubusercontent.com/kongbaNB/-/refs/heads/main/祖国人汉化"))()
 end)
 
--- 传送玩家
-local TPPlayers = game:GetService("Players")
-local TPDropdown = FeatureBox:AddDropdown("TP_Target", {
-    Text = "选择玩家",
-    Default = "",
-    Values = {},
-    Tooltip = "选择要传送到的玩家",
-})
+-- ============================================
+-- 玩家交互功能 (传送/坐头/甩飞/视角监视/恶搞跟随)
+-- ============================================
+local PPlayers = game:GetService("Players")
+local PLocalPlayer = PPlayers.LocalPlayer
+local PRunService = game:GetService("RunService")
 
-local function refreshPlayerList()
-    local names = {}
-    for _, p in pairs(TPPlayers:GetPlayers()) do
-        if p ~= TPPlayers.LocalPlayer then
-            table.insert(names, p.Name)
-        end
-    end
-    table.sort(names)
-    TPDropdown:SetValues(names)
+local function pNotify(title, text)
+    pcall(function()
+        game.StarterGui:SetCore("SendNotification", { Title = title, Text = text, Duration = 3 })
+    end)
 end
 
-refreshPlayerList()
-TPPlayers.PlayerAdded:Connect(refreshPlayerList)
-TPPlayers.PlayerRemoving:Connect(refreshPlayerList)
+local function getLocalChar()
+    return PLocalPlayer.Character
+end
 
-FeatureBox:AddButton("传送", function()
-    local target = Options.TP_Target.Value
-    if target == "" then return end
-    local targetPlayer = TPPlayers:FindFirstChild(target)
-    if not targetPlayer or not targetPlayer.Character then return end
-    local targetHrp = targetPlayer.Character:FindFirstChild("HumanoidRootPart")
-    local myChar = TPPlayers.LocalPlayer.Character
-    if not targetHrp or not myChar then return end
-    local myHrp = myChar:FindFirstChild("HumanoidRootPart")
-    if not myHrp then return end
-    myHrp.CFrame = targetHrp.CFrame * CFrame.new(0, 0, 3)
+local function getTargetPlayer(name)
+    for _, p in ipairs(PPlayers:GetPlayers()) do
+        if p.Name == name or p.DisplayName == name then return p end
+    end
+    return nil
+end
+
+local function disableCollision(char)
+    if not char then return end
+    for _, part in ipairs(char:GetDescendants()) do
+        if part:IsA("BasePart") then part.CanCollide = false end
+    end
+end
+
+local function enableCollision(char)
+    if not char then return end
+    for _, part in ipairs(char:GetDescendants()) do
+        if part:IsA("BasePart") then part.CanCollide = true end
+    end
+end
+
+local PState = { conns = {}, threads = {} }
+local function stopAllConns()
+    for name, conn in pairs(PState.conns) do
+        if typeof(conn) == "RBXScriptConnection" then
+            conn:Disconnect()
+            PState.conns[name] = nil
+        end
+    end
+    for _, thread in ipairs(PState.threads) do
+        if thread then task.cancel(thread) end
+    end
+    PState.threads = {}
+end
+
+-- 通用玩家列表刷新函数
+local function refreshPlayerNames()
+    local names = {}
+    for _, p in ipairs(PPlayers:GetPlayers()) do
+        if p ~= PLocalPlayer then table.insert(names, p.Name) end
+    end
+    table.sort(names)
+    return names
+end
+
+-- ========== 1. 传送功能 ==========
+local TeleportBox = Tabs.Main:AddRightGroupbox("传送功能")
+local tpTargetName = ""
+local tpDropdown = TeleportBox:AddDropdown("TP2_Target", {
+    Text = "选择目标玩家",
+    Values = {},
+    Default = "",
+    Multi = false,
+})
+tpDropdown:OnChanged(function(v) tpTargetName = v end)
+
+TeleportBox:AddButton("刷新玩家列表", function()
+    tpDropdown:SetValues(refreshPlayerNames())
+    pNotify("刷新", "已刷新玩家列表")
 end)
 
-FeatureBox:AddButton("全服传送", function()
-    local myChar = TPPlayers.LocalPlayer.Character
-    if not myChar then return end
-    local myHrp = myChar:FindFirstChild("HumanoidRootPart")
-    if not myHrp then return end
-    for _, p in pairs(TPPlayers:GetPlayers()) do
-        if p ~= TPPlayers.LocalPlayer and p.Character then
-            local tHrp = p.Character:FindFirstChild("HumanoidRootPart")
-            if tHrp then
-                myHrp.CFrame = tHrp.CFrame * CFrame.new(0, 0, 3)
-                task.wait(0.1)
-            end
-        end
+TeleportBox:AddButton("传送到选定玩家", function()
+    if tpTargetName == "" then pNotify("提示", "请先选择玩家") return end
+    local target = getTargetPlayer(tpTargetName)
+    if not target or not target.Character then pNotify("失败", "目标不存在") return end
+    local char = getLocalChar()
+    if not char then return end
+    local root = char:FindFirstChild("HumanoidRootPart")
+    local targetRoot = target.Character:FindFirstChild("HumanoidRootPart")
+    if root and targetRoot then
+        root.CFrame = targetRoot.CFrame
+        pNotify("成功", "已传送到 " .. target.Name)
     end
 end)
 
--- 猫脚本甩飞 (SkidFling)
-local FlingPlayers = game:GetService("Players")
+local tpLoopSingle = false
+TeleportBox:AddToggle("TP2_LoopSingle", { Text = "循环传送", Default = false }):OnChanged(function(v)
+    tpLoopSingle = v
+    if v then
+        local thread = task.spawn(function()
+            while tpLoopSingle do
+                if tpTargetName ~= "" then
+                    local target = getTargetPlayer(tpTargetName)
+                    if target and target.Character then
+                        local char = getLocalChar()
+                        if char then
+                            local root = char:FindFirstChild("HumanoidRootPart")
+                            local targetRoot = target.Character:FindFirstChild("HumanoidRootPart")
+                            if root and targetRoot then root.CFrame = targetRoot.CFrame end
+                        end
+                    end
+                end
+                task.wait(0.3)
+            end
+        end)
+        table.insert(PState.threads, thread)
+    end
+end)
 
-local function SkidFling(TargetPlayer)
-    local Player = FlingPlayers.LocalPlayer
+-- ========== 2. 坐头功能 ==========
+local HeadSitBox = Tabs.Main:AddRightGroupbox("坐头功能")
+local sitHeadTargetName = ""
+local sitHeadDropdown = HeadSitBox:AddDropdown("SitHead_Target", {
+    Text = "选择目标玩家",
+    Values = {},
+    Default = "",
+    Multi = false,
+})
+sitHeadDropdown:OnChanged(function(v) sitHeadTargetName = v end)
+
+HeadSitBox:AddButton("刷新玩家列表", function()
+    sitHeadDropdown:SetValues(refreshPlayerNames())
+    pNotify("刷新", "已刷新玩家列表")
+end)
+
+local headSitActive = false
+local loopHeadSit = false
+
+local function stopHeadSit()
+    headSitActive = false
+    if PState.conns.headSit then
+        PState.conns.headSit:Disconnect()
+        PState.conns.headSit = nil
+    end
+    local char = getLocalChar()
+    if char then
+        local hum = char:FindFirstChildOfClass("Humanoid")
+        if hum then hum.Sit = false end
+        enableCollision(char)
+    end
+    pNotify("坐头停止", "已停止坐头")
+end
+
+local function startHeadSit(playerName)
+    if PState.conns.headSit then
+        PState.conns.headSit:Disconnect()
+        PState.conns.headSit = nil
+    end
+    headSitActive = true
+    local char = getLocalChar()
+    if not char then pNotify("失败", "角色未加载") headSitActive = false return end
+    local hum = char:FindFirstChildOfClass("Humanoid")
+    local root = char:FindFirstChild("HumanoidRootPart")
+    if not hum or not root then pNotify("失败", "角色缺少部件") headSitActive = false return end
+    disableCollision(char)
+    hum.Sit = true
+    PState.conns.headSit = PRunService.Heartbeat:Connect(function()
+        pcall(function()
+            if not headSitActive or not char.Parent then
+                if loopHeadSit and PLocalPlayer.Character then
+                    task.wait(1)
+                    if loopHeadSit and sitHeadTargetName ~= "" then
+                        startHeadSit(sitHeadTargetName)
+                    end
+                else
+                    stopHeadSit()
+                end
+                return
+            end
+            local target = getTargetPlayer(playerName)
+            if not target or not target.Character then
+                if loopHeadSit then
+                    task.wait(1)
+                    if loopHeadSit and sitHeadTargetName ~= "" then
+                        startHeadSit(sitHeadTargetName)
+                    end
+                else
+                    stopHeadSit()
+                end
+                return
+            end
+            local targetRoot = target.Character:FindFirstChild("HumanoidRootPart")
+            if not targetRoot then return end
+            root.CFrame = targetRoot.CFrame * CFrame.new(0, 1.6, 0.4)
+            disableCollision(char)
+        end)
+    end)
+    pNotify("坐头启动", "已开始坐 " .. tostring(playerName) .. " 的头")
+end
+
+HeadSitBox:AddButton("坐选定玩家头上", function()
+    if sitHeadTargetName == "" then pNotify("提示", "请先选择玩家") return end
+    stopHeadSit()
+    startHeadSit(sitHeadTargetName)
+end)
+
+HeadSitBox:AddToggle("SitHead_Loop", { Text = "循环坐头(死亡后继续)", Default = false }):OnChanged(function(v)
+    loopHeadSit = v
+    if v and sitHeadTargetName ~= "" then
+        stopHeadSit()
+        startHeadSit(sitHeadTargetName)
+    else
+        stopHeadSit()
+    end
+end)
+
+HeadSitBox:AddButton("停止坐头", stopHeadSit)
+
+-- ========== 3. 甩飞功能 ==========
+local FlingBox2 = Tabs.Main:AddRightGroupbox("甩飞功能")
+local flingTargetName = ""
+local flingDropdown = FlingBox2:AddDropdown("Fling2_Target", {
+    Text = "选择目标玩家",
+    Values = {},
+    Default = "",
+    Multi = false,
+})
+flingDropdown:OnChanged(function(v) flingTargetName = v end)
+
+FlingBox2:AddButton("刷新玩家列表", function()
+    flingDropdown:SetValues(refreshPlayerNames())
+    pNotify("刷新", "已刷新玩家列表")
+end)
+
+local flingLoops2 = { single = false, all = false }
+
+local function SkidFling2(targetPlayer)
+    local Player = PLocalPlayer
     local Character = Player.Character
     local Humanoid = Character and Character:FindFirstChildOfClass("Humanoid")
     local RootPart = Humanoid and Humanoid.RootPart
+    if not RootPart then return end
 
-    local TCharacter = TargetPlayer.Character
-    local THumanoid, TRootPart, THead, Accessory, Handle
+    local TCharacter = targetPlayer.Character
+    if not TCharacter then return end
+    local THumanoid = TCharacter:FindFirstChildOfClass("Humanoid")
+    local TRootPart = THumanoid and THumanoid.RootPart
+    local THead = TCharacter:FindFirstChild("Head")
+    local Accessory = TCharacter:FindFirstChildOfClass("Accessory")
+    local Handle = Accessory and Accessory:FindFirstChild("Handle")
 
-    if TCharacter and TCharacter:FindFirstChildOfClass("Humanoid") then
-        THumanoid = TCharacter:FindFirstChildOfClass("Humanoid")
+    if RootPart.Velocity.Magnitude < 50 then
+        getgenv().OldPos = RootPart.CFrame
     end
-    if THumanoid and THumanoid.RootPart then
-        TRootPart = THumanoid.RootPart
-    end
-    if TCharacter and TCharacter:FindFirstChild("Head") then
-        THead = TCharacter.Head
-    end
-    if TCharacter and TCharacter:FindFirstChildOfClass("Accessory") then
-        Accessory = TCharacter:FindFirstChildOfClass("Accessory")
-    end
-    if Accessory and Accessory:FindFirstChild("Handle") then
-        Handle = Accessory.Handle
+    if THumanoid and THumanoid.Sit then return end
+    if THead then
+        workspace.CurrentCamera.CameraSubject = THead
+    elseif Handle then
+        workspace.CurrentCamera.CameraSubject = Handle
+    elseif THumanoid then
+        workspace.CurrentCamera.CameraSubject = THumanoid
     end
 
-    if Character and Humanoid and RootPart then
-        if RootPart.Velocity.Magnitude < 50 then
-            getgenv().OldPos = RootPart.CFrame
-        end
-        if not getgenv().FPDH then
-            getgenv().FPDH = game:GetService("Workspace").FallenPartsDestroyHeight
-        end
+    local FPos = function(BasePart, Pos, Ang)
+        RootPart.CFrame = CFrame.new(BasePart.Position) * Pos * Ang
+        Character:SetPrimaryPartCFrame(CFrame.new(BasePart.Position) * Pos * Ang)
+        RootPart.Velocity = Vector3.new(9e7, 9e7 * 10, 9e7)
+        RootPart.RotVelocity = Vector3.new(9e8, 9e8, 9e8)
+    end
 
-        local FPos = function(BasePart, Pos, Ang)
-            RootPart.CFrame = CFrame.new(BasePart.Position) * Pos * Ang
-            Character:SetPrimaryPartCFrame(CFrame.new(BasePart.Position) * Pos * Ang)
-            RootPart.Velocity = Vector3.new(9e7, 9e7 * 10, 9e7)
-            RootPart.RotVelocity = Vector3.new(9e8, 9e8, 9e8)
-        end
-
-        local SFBasePart = function(BasePart)
-            local TimeToWait = 2
-            local Time = tick()
-            local Angle = 0
-            repeat
-                if RootPart and THumanoid then
-                    if BasePart.Velocity.Magnitude < 50 then
-                        Angle = Angle + 100
-                        FPos(BasePart, CFrame.new(0, 1.5, 0) + THumanoid.MoveDirection * BasePart.Velocity.Magnitude / 1.25, CFrame.Angles(math.rad(Angle), 0, 0))
-                        task.wait()
-                        FPos(BasePart, CFrame.new(0, -1.5, 0) + THumanoid.MoveDirection * BasePart.Velocity.Magnitude / 1.25, CFrame.Angles(math.rad(Angle), 0, 0))
-                        task.wait()
-                        FPos(BasePart, CFrame.new(2.25, 1.5, -2.25) + THumanoid.MoveDirection * BasePart.Velocity.Magnitude / 1.25, CFrame.Angles(math.rad(Angle), 0, 0))
-                        task.wait()
-                        FPos(BasePart, CFrame.new(-2.25, -1.5, 2.25) + THumanoid.MoveDirection * BasePart.Velocity.Magnitude / 1.25, CFrame.Angles(math.rad(Angle), 0, 0))
-                        task.wait()
-                        FPos(BasePart, CFrame.new(0, 1.5, 0) + THumanoid.MoveDirection, CFrame.Angles(math.rad(Angle), 0, 0))
-                        task.wait()
-                        FPos(BasePart, CFrame.new(0, -1.5, 0) + THumanoid.MoveDirection, CFrame.Angles(math.rad(Angle), 0, 0))
-                        task.wait()
-                    else
-                        FPos(BasePart, CFrame.new(0, 1.5, THumanoid.WalkSpeed), CFrame.Angles(math.rad(90), 0, 0))
-                        task.wait()
-                        FPos(BasePart, CFrame.new(0, -1.5, -THumanoid.WalkSpeed), CFrame.Angles(0, 0, 0))
-                        task.wait()
-                        FPos(BasePart, CFrame.new(0, 1.5, THumanoid.WalkSpeed), CFrame.Angles(math.rad(90), 0, 0))
-                        task.wait()
-                        FPos(BasePart, CFrame.new(0, 1.5, TRootPart.Velocity.Magnitude / 1.25), CFrame.Angles(math.rad(90), 0, 0))
-                        task.wait()
-                        FPos(BasePart, CFrame.new(0, -1.5, -TRootPart.Velocity.Magnitude / 1.25), CFrame.Angles(0, 0, 0))
-                        task.wait()
-                        FPos(BasePart, CFrame.new(0, 1.5, TRootPart.Velocity.Magnitude / 1.25), CFrame.Angles(math.rad(90), 0, 0))
-                        task.wait()
-                        FPos(BasePart, CFrame.new(0, -1.5, 0), CFrame.Angles(math.rad(90), 0, 0))
-                        task.wait()
-                        FPos(BasePart, CFrame.new(0, -1.5, 0), CFrame.Angles(0, 0, 0))
-                        task.wait()
-                        FPos(BasePart, CFrame.new(0, -1.5, 0), CFrame.Angles(math.rad(-90), 0, 0))
-                        task.wait()
-                        FPos(BasePart, CFrame.new(0, -1.5, 0), CFrame.Angles(0, 0, 0))
-                        task.wait()
-                    end
-                else
-                    break
-                end
-            until BasePart.Velocity.Magnitude > 500 or BasePart.Parent ~= TargetPlayer.Character or TargetPlayer.Parent ~= FlingPlayers or not TargetPlayer.Character == TCharacter or (THumanoid and THumanoid.Sit) or Humanoid.Health <= 0 or tick() > Time + TimeToWait
-        end
-
-        game:GetService("Workspace").FallenPartsDestroyHeight = 0/0
-
-        local BV = Instance.new("BodyVelocity")
-        BV.Name = "EpixVel"
-        BV.Parent = RootPart
-        BV.Velocity = Vector3.new(9e8, 9e8, 9e8)
-        BV.MaxForce = Vector3.new(1/0, 1/0, 1/0)
-
-        Humanoid:SetStateEnabled(Enum.HumanoidStateType.Seated, false)
-
-        if TRootPart and THead then
-            if (TRootPart.CFrame.p - THead.CFrame.p).Magnitude > 5 then
-                SFBasePart(THead)
-            else
-                SFBasePart(TRootPart)
-            end
-        elseif TRootPart and not THead then
-            SFBasePart(TRootPart)
-        elseif not TRootPart and THead then
-            SFBasePart(THead)
-        elseif not TRootPart and not THead and Accessory and Handle then
-            SFBasePart(Handle)
-        end
-
-        BV:Destroy()
-        Humanoid:SetStateEnabled(Enum.HumanoidStateType.Seated, true)
-        game:GetService("Workspace").CurrentCamera.CameraSubject = Humanoid
-
+    local SFBasePart = function(BasePart)
+        local TimeToWait = 2
+        local Time = tick()
+        local Angle = 0
         repeat
-            RootPart.CFrame = getgenv().OldPos * CFrame.new(0, .5, 0)
-            Character:SetPrimaryPartCFrame(getgenv().OldPos * CFrame.new(0, .5, 0))
-            Humanoid:ChangeState("GettingUp")
-            table.foreach(Character:GetChildren(), function(_, x)
-                if x:IsA("BasePart") then
-                    x.Velocity, x.RotVelocity = Vector3.new(), Vector3.new()
+            if RootPart and THumanoid then
+                if BasePart.Velocity.Magnitude < 50 then
+                    Angle = Angle + 100
+                    FPos(BasePart, CFrame.new(0, 1.5, 0) + THumanoid.MoveDirection * BasePart.Velocity.Magnitude / 1.25, CFrame.Angles(math.rad(Angle), 0, 0))
+                    task.wait()
+                    FPos(BasePart, CFrame.new(0, -1.5, 0) + THumanoid.MoveDirection * BasePart.Velocity.Magnitude / 1.25, CFrame.Angles(math.rad(Angle), 0, 0))
+                    task.wait()
+                    FPos(BasePart, CFrame.new(2.25, 1.5, -2.25) + THumanoid.MoveDirection * BasePart.Velocity.Magnitude / 1.25, CFrame.Angles(math.rad(Angle), 0, 0))
+                    task.wait()
+                    FPos(BasePart, CFrame.new(-2.25, -1.5, 2.25) + THumanoid.MoveDirection * BasePart.Velocity.Magnitude / 1.25, CFrame.Angles(math.rad(Angle), 0, 0))
+                    task.wait()
+                    FPos(BasePart, CFrame.new(0, 1.5, 0) + THumanoid.MoveDirection, CFrame.Angles(math.rad(Angle), 0, 0))
+                    task.wait()
+                    FPos(BasePart, CFrame.new(0, -1.5, 0) + THumanoid.MoveDirection, CFrame.Angles(math.rad(Angle), 0, 0))
+                    task.wait()
+                else
+                    FPos(BasePart, CFrame.new(0, 1.5, THumanoid.WalkSpeed), CFrame.Angles(math.rad(90), 0, 0))
+                    task.wait()
+                    FPos(BasePart, CFrame.new(0, -1.5, -THumanoid.WalkSpeed), CFrame.Angles(0, 0, 0))
+                    task.wait()
+                    FPos(BasePart, CFrame.new(0, 1.5, THumanoid.WalkSpeed), CFrame.Angles(math.rad(90), 0, 0))
+                    task.wait()
+                    FPos(BasePart, CFrame.new(0, 1.5, TRootPart.Velocity.Magnitude / 1.25), CFrame.Angles(math.rad(90), 0, 0))
+                    task.wait()
+                    FPos(BasePart, CFrame.new(0, -1.5, -TRootPart.Velocity.Magnitude / 1.25), CFrame.Angles(0, 0, 0))
+                    task.wait()
+                    FPos(BasePart, CFrame.new(0, 1.5, TRootPart.Velocity.Magnitude / 1.25), CFrame.Angles(math.rad(90), 0, 0))
+                    task.wait()
+                    FPos(BasePart, CFrame.new(0, -1.5, 0), CFrame.Angles(math.rad(90), 0, 0))
+                    task.wait()
+                    FPos(BasePart, CFrame.new(0, -1.5, 0), CFrame.Angles(0, 0, 0))
+                    task.wait()
+                    FPos(BasePart, CFrame.new(0, -1.5, 0), CFrame.Angles(math.rad(-90), 0, 0))
+                    task.wait()
+                    FPos(BasePart, CFrame.new(0, -1.5, 0), CFrame.Angles(0, 0, 0))
+                    task.wait()
                 end
+            else
+                break
+            end
+        until BasePart.Velocity.Magnitude > 500 or BasePart.Parent ~= targetPlayer.Character or targetPlayer.Parent ~= PPlayers or not targetPlayer.Character == TCharacter or (THumanoid and THumanoid.Sit) or Humanoid.Health <= 0 or tick() > Time + TimeToWait
+    end
+
+    workspace.FallenPartsDestroyHeight = 0/0
+    local BV = Instance.new("BodyVelocity")
+    BV.Name = "EpixVel"
+    BV.Parent = RootPart
+    BV.Velocity = Vector3.new(9e8, 9e8, 9e8)
+    BV.MaxForce = Vector3.new(1/0, 1/0, 1/0)
+    Humanoid:SetStateEnabled(Enum.HumanoidStateType.Seated, false)
+
+    if TRootPart and THead then
+        if (TRootPart.CFrame.p - THead.CFrame.p).Magnitude > 5 then
+            SFBasePart(THead)
+        else
+            SFBasePart(TRootPart)
+        end
+    elseif TRootPart then
+        SFBasePart(TRootPart)
+    elseif THead then
+        SFBasePart(THead)
+    elseif Handle then
+        SFBasePart(Handle)
+    else
+        return
+    end
+
+    BV:Destroy()
+    Humanoid:SetStateEnabled(Enum.HumanoidStateType.Seated, true)
+    workspace.CurrentCamera.CameraSubject = Humanoid
+
+    repeat
+        RootPart.CFrame = getgenv().OldPos * CFrame.new(0, .5, 0)
+        Character:SetPrimaryPartCFrame(getgenv().OldPos * CFrame.new(0, .5, 0))
+        Humanoid:ChangeState("GettingUp")
+        table.foreach(Character:GetChildren(), function(_, x)
+            if x:IsA("BasePart") then
+                x.Velocity, x.RotVelocity = Vector3.new(), Vector3.new()
+            end
+        end)
+        task.wait()
+    until (RootPart.Position - getgenv().OldPos.p).Magnitude < 25
+    workspace.FallenPartsDestroyHeight = getgenv().FPDH
+end
+
+FlingBox2:AddButton("甩飞选定玩家", function()
+    if flingTargetName == "" then pNotify("错误", "请先选择玩家") return end
+    local target = getTargetPlayer(flingTargetName)
+    if not target then pNotify("错误", "未找到玩家") return end
+    pcall(function() SkidFling2(target) end)
+    pNotify("成功", "甩飞玩家一次")
+end)
+
+FlingBox2:AddToggle("Fling2_LoopSingle", { Text = "循环甩飞选定玩家", Default = false }):OnChanged(function(v)
+    flingLoops2.single = v
+    if v then
+        local thread = task.spawn(function()
+            while flingLoops2.single do
+                if flingTargetName ~= "" then
+                    local target = getTargetPlayer(flingTargetName)
+                    if target then pcall(function() SkidFling2(target) end) end
+                end
+                task.wait(0.1)
+            end
+        end)
+        table.insert(PState.threads, thread)
+        pNotify("开始", "循环甩飞玩家")
+    else
+        pNotify("停止", "循环甩飞已停止")
+    end
+end)
+
+FlingBox2:AddButton("停止所有甩飞", function()
+    flingLoops2.single = false
+    flingLoops2.all = false
+    pNotify("停止", "已停止所有甩飞")
+end)
+
+-- ========== 4. 视角监视 ==========
+local MonitorBox2 = Tabs.Main:AddRightGroupbox("视角监视")
+local monitorTargetName = ""
+local monitorDropdown = MonitorBox2:AddDropdown("Monitor2_Target", {
+    Text = "选择目标玩家",
+    Values = {},
+    Default = "",
+    Multi = false,
+})
+monitorDropdown:OnChanged(function(v) monitorTargetName = v end)
+
+MonitorBox2:AddButton("刷新玩家列表", function()
+    monitorDropdown:SetValues(refreshPlayerNames())
+    pNotify("刷新", "已刷新玩家列表")
+end)
+
+local function stopMonitor2()
+    if PState.conns.monitor then
+        PState.conns.monitor:Disconnect()
+        PState.conns.monitor = nil
+    end
+    local char = getLocalChar()
+    if char then
+        local hum = char:FindFirstChildOfClass("Humanoid")
+        if hum then workspace.CurrentCamera.CameraSubject = hum end
+    end
+    pNotify("监视停止", "已停止监视")
+end
+
+local function startMonitor2(playerName)
+    if PState.conns.monitor then
+        PState.conns.monitor:Disconnect()
+        PState.conns.monitor = nil
+    end
+    local camera = workspace.CurrentCamera
+    if not camera then return end
+    PState.conns.monitor = PRunService.Heartbeat:Connect(function()
+        pcall(function()
+            local target = getTargetPlayer(playerName)
+            if not target or not target.Character then
+                stopMonitor2()
+                return
+            end
+            local subject = target.Character:FindFirstChildOfClass("Humanoid")
+            if not subject then
+                subject = target.Character:FindFirstChild("Head") or target.Character:FindFirstChild("HumanoidRootPart")
+            end
+            if subject then
+                camera.CameraSubject = subject
+            end
+        end)
+    end)
+    pNotify("监视启动", "已开始监视 " .. playerName)
+end
+
+MonitorBox2:AddButton("开始监视选定玩家", function()
+    if monitorTargetName == "" then pNotify("提示", "请先选择玩家") return end
+    stopMonitor2()
+    startMonitor2(monitorTargetName)
+end)
+
+MonitorBox2:AddButton("停止监视", stopMonitor2)
+
+-- ========== 5. 恶搞跟随 (14种模式) ==========
+local FollowBox2 = Tabs.Main:AddRightGroupbox("恶搞跟随")
+local followTargetName = ""
+local followDropdown = FollowBox2:AddDropdown("Follow2_Target", {
+    Text = "选择目标玩家",
+    Values = {},
+    Default = "",
+    Multi = false,
+})
+followDropdown:OnChanged(function(v) followTargetName = v end)
+
+FollowBox2:AddButton("刷新玩家列表", function()
+    followDropdown:SetValues(refreshPlayerNames())
+    pNotify("刷新", "已刷新玩家列表")
+end)
+
+local followStates2 = {}
+
+local function stopAllFollows2()
+    for name, _ in pairs(followStates2) do
+        followStates2[name] = false
+    end
+    for name, conn in pairs(PState.conns) do
+        if name:find("follow2_") then
+            conn:Disconnect()
+            PState.conns[name] = nil
+        end
+    end
+    local char = getLocalChar()
+    if char then enableCollision(char) end
+end
+
+local function makeFollow(id, desc, offset_fn)
+    followStates2[id] = false
+    return function(target)
+        stopAllFollows2()
+        followStates2[id] = true
+        local char = getLocalChar()
+        if not char then return end
+        local root = char:FindFirstChild("HumanoidRootPart")
+        if not root then return end
+        if offset_fn.collide == false then
+            -- keep collision
+        else
+            disableCollision(char)
+        end
+        PState.conns["follow2_" .. id] = PRunService.Heartbeat:Connect(function()
+            pcall(function()
+                if not followStates2[id] or not char.Parent then return end
+                if not target.Character then stopAllFollows2() return end
+                local tr = target.Character:FindFirstChild("HumanoidRootPart")
+                if not tr then return end
+                local cf = offset_fn(tr, root, char)
+                if cf then root.CFrame = cf end
             end)
-            task.wait()
-        until (RootPart.Position - getgenv().OldPos.p).Magnitude < 25
-        game:GetService("Workspace").FallenPartsDestroyHeight = getgenv().FPDH
+        end)
     end
 end
 
-FeatureBox:AddButton("甩飞选中", function()
-    local target = Options.TP_Target.Value
-    if target == "" then return end
-    local targetPlayer = FlingPlayers:FindFirstChild(target)
-    if not targetPlayer or not targetPlayer.Character then return end
-    pcall(function()
-        SkidFling(targetPlayer)
-    end)
-end)
-
-FeatureBox:AddButton("全服甩飞", function()
-    for _, x in pairs(FlingPlayers:GetPlayers()) do
-        if x ~= FlingPlayers.LocalPlayer and x.Character then
+local followToggles2 = {
+    { id = "orbit", text = "旋转环绕", fn = function(target)
+        followStates2.orbit = true
+        local char = getLocalChar()
+        if not char then return end
+        local root = char:FindFirstChild("HumanoidRootPart")
+        if not root then return end
+        disableCollision(char)
+        local angle = 0
+        PState.conns.follow2_orbit = PRunService.Heartbeat:Connect(function()
             pcall(function()
-                SkidFling(x)
+                if not followStates2.orbit or not char.Parent then return end
+                if not target.Character then stopAllFollows2() return end
+                local tr = target.Character:FindFirstChild("HumanoidRootPart")
+                if not tr then return end
+                angle = angle + 0.05
+                if angle > 360 then angle = 0 end
+                root.CFrame = CFrame.new(tr.Position + Vector3.new(math.cos(angle)*5, 2, math.sin(angle)*5), tr.Position)
             end)
-            task.wait(0.5)
+        end)
+    end },
+    { id = "mirror", text = "镜像", fn = function(target)
+        followStates2.mirror = true
+        local char = getLocalChar()
+        if not char then return end
+        local root = char:FindFirstChild("HumanoidRootPart")
+        if not root then return end
+        disableCollision(char)
+        PState.conns.follow2_mirror = PRunService.Heartbeat:Connect(function()
+            pcall(function()
+                if not followStates2.mirror or not char.Parent then return end
+                if not target.Character then stopAllFollows2() return end
+                local tr = target.Character:FindFirstChild("HumanoidRootPart")
+                if not tr then return end
+                local pos = tr.CFrame * CFrame.new(4, 0, 0)
+                root.CFrame = CFrame.new(pos.Position) * CFrame.Angles(0, math.pi, 0)
+            end)
+        end)
+    end },
+    { id = "float", text = "漂浮", fn = function(target)
+        followStates2.float = true
+        local char = getLocalChar()
+        if not char then return end
+        local root = char:FindFirstChild("HumanoidRootPart")
+        if not root then return end
+        disableCollision(char)
+        PState.conns.follow2_float = PRunService.Heartbeat:Connect(function()
+            pcall(function()
+                if not followStates2.float or not char.Parent then return end
+                if not target.Character then stopAllFollows2() return end
+                local tr = target.Character:FindFirstChild("HumanoidRootPart")
+                if not tr then return end
+                root.CFrame = CFrame.new(tr.Position + Vector3.new(0, 3, 0))
+            end)
+        end)
+    end },
+    { id = "shadow", text = "影子", fn = function(target)
+        followStates2.shadow = true
+        local char = getLocalChar()
+        if not char then return end
+        local root = char:FindFirstChild("HumanoidRootPart")
+        if not root then return end
+        disableCollision(char)
+        PState.conns.follow2_shadow = PRunService.Heartbeat:Connect(function()
+            pcall(function()
+                if not followStates2.shadow or not char.Parent then return end
+                if not target.Character then stopAllFollows2() return end
+                local tr = target.Character:FindFirstChild("HumanoidRootPart")
+                if not tr then return end
+                root.CFrame = tr.CFrame * CFrame.new(0, -2.8, 0)
+            end)
+        end)
+    end },
+    { id = "anti", text = "反向跟随", fn = function(target)
+        followStates2.anti = true
+        local char = getLocalChar()
+        if not char then return end
+        local root = char:FindFirstChild("HumanoidRootPart")
+        if not root then return end
+        PState.conns.follow2_anti = PRunService.Heartbeat:Connect(function()
+            pcall(function()
+                if not followStates2.anti or not char.Parent then return end
+                if not target.Character then stopAllFollows2() return end
+                local tr = target.Character:FindFirstChild("HumanoidRootPart")
+                if not tr then return end
+                local dist = (root.Position - tr.Position).Magnitude
+                if dist < 8 then
+                    local away = (root.Position - tr.Position).Unit
+                    root.CFrame = CFrame.new(tr.Position + away * 8)
+                end
+            end)
+        end)
+    end },
+    { id = "spin", text = "旋转", fn = function(target)
+        followStates2.spin = true
+        local char = getLocalChar()
+        if not char then return end
+        local root = char:FindFirstChild("HumanoidRootPart")
+        if not root then return end
+        disableCollision(char)
+        local angle = 0
+        PState.conns.follow2_spin = PRunService.Heartbeat:Connect(function()
+            pcall(function()
+                if not followStates2.spin or not char.Parent then return end
+                if not target.Character then stopAllFollows2() return end
+                local tr = target.Character:FindFirstChild("HumanoidRootPart")
+                if not tr then return end
+                angle = angle + 5
+                root.CFrame = CFrame.new(tr.Position + Vector3.new(0, 2, 0)) * CFrame.Angles(0, math.rad(angle), 0)
+            end)
+        end)
+    end },
+    { id = "shake", text = "抖动", fn = function(target)
+        followStates2.shake = true
+        local char = getLocalChar()
+        if not char then return end
+        local root = char:FindFirstChild("HumanoidRootPart")
+        if not root then return end
+        disableCollision(char)
+        PState.conns.follow2_shake = PRunService.Heartbeat:Connect(function()
+            pcall(function()
+                if not followStates2.shake or not char.Parent then return end
+                if not target.Character then stopAllFollows2() return end
+                local tr = target.Character:FindFirstChild("HumanoidRootPart")
+                if not tr then return end
+                local offset = Vector3.new(math.random(-2, 2), math.random(0, 3), math.random(-2, 2))
+                root.CFrame = CFrame.new(tr.Position + offset)
+            end)
+        end)
+    end },
+    { id = "face", text = "站头后", fn = function(target)
+        followStates2.face = true
+        local char = getLocalChar()
+        if not char then return end
+        local root = char:FindFirstChild("HumanoidRootPart")
+        if not root then return end
+        disableCollision(char)
+        PState.conns.follow2_face = PRunService.Heartbeat:Connect(function()
+            pcall(function()
+                if not followStates2.face or not char.Parent then return end
+                if not target.Character then stopAllFollows2() return end
+                local tr = target.Character:FindFirstChild("HumanoidRootPart")
+                if not tr then return end
+                root.CFrame = tr.CFrame * CFrame.new(0, 3.5, 0)
+            end)
+        end)
+    end },
+    { id = "back", text = "坐前面", fn = function(target)
+        followStates2.back = true
+        local char = getLocalChar()
+        if not char then return end
+        local root = char:FindFirstChild("HumanoidRootPart")
+        if not root then return end
+        local hum = char:FindFirstChildOfClass("Humanoid")
+        if hum then hum.Sit = true end
+        disableCollision(char)
+        PState.conns.follow2_back = PRunService.Heartbeat:Connect(function()
+            pcall(function()
+                if not followStates2.back or not char.Parent then return end
+                if not target.Character then stopAllFollows2() return end
+                local tr = target.Character:FindFirstChild("HumanoidRootPart")
+                if not tr then return end
+                root.CFrame = tr.CFrame * CFrame.new(0, 0, 2)
+                if hum then hum.Sit = true end
+            end)
+        end)
+    end },
+    { id = "auto", text = "动画跟随", fn = function(target)
+        followStates2.auto = true
+        local char = getLocalChar()
+        if not char then return end
+        local root = char:FindFirstChild("HumanoidRootPart")
+        if not root then return end
+        disableCollision(char)
+        PState.conns.follow2_auto = PRunService.Heartbeat:Connect(function()
+            pcall(function()
+                if not followStates2.auto or not char.Parent then return end
+                if not target.Character then stopAllFollows2() return end
+                local tr = target.Character:FindFirstChild("HumanoidRootPart")
+                if not tr then return end
+                root.CFrame = tr.CFrame * CFrame.new(0, 0, -3)
+            end)
+        end)
+    end },
+    { id = "suck", text = "口交", fn = function(target)
+        followStates2.suck = true
+        local char = getLocalChar()
+        if not char then return end
+        local root = char:FindFirstChild("HumanoidRootPart")
+        if not root then return end
+        disableCollision(char)
+        local hum = char:FindFirstChildOfClass("Humanoid")
+        if hum then hum.Sit = true end
+        PState.conns.follow2_suck = PRunService.Heartbeat:Connect(function()
+            pcall(function()
+                if not followStates2.suck or not char.Parent then return end
+                if not target.Character then stopAllFollows2() return end
+                local tr = target.Character:FindFirstChild("HumanoidRootPart")
+                if not tr then return end
+                root.CFrame = tr.CFrame * CFrame.new(0, -1, 1)
+                if hum then hum.Sit = true end
+            end)
+        end)
+    end },
+    { id = "sus", text = "被超", fn = function(target)
+        followStates2.sus = true
+        local char = getLocalChar()
+        if not char then return end
+        local root = char:FindFirstChild("HumanoidRootPart")
+        if not root then return end
+        disableCollision(char)
+        PState.conns.follow2_sus = PRunService.Heartbeat:Connect(function()
+            pcall(function()
+                if not followStates2.sus or not char.Parent then return end
+                if not target.Character then stopAllFollows2() return end
+                local tr = target.Character:FindFirstChild("HumanoidRootPart")
+                if not tr then return end
+                root.CFrame = tr.CFrame * CFrame.new(0, 0, -1)
+            end)
+        end)
+    end },
+    { id = "modern", text = "超别人", fn = function(target)
+        followStates2.modern = true
+        local char = getLocalChar()
+        if not char then return end
+        local root = char:FindFirstChild("HumanoidRootPart")
+        if not root then return end
+        disableCollision(char)
+        PState.conns.follow2_modern = PRunService.Heartbeat:Connect(function()
+            pcall(function()
+                if not followStates2.modern or not char.Parent then return end
+                if not target.Character then stopAllFollows2() return end
+                local tr = target.Character:FindFirstChild("HumanoidRootPart")
+                if not tr then return end
+                root.CFrame = tr.CFrame * CFrame.new(0, 0, 1)
+            end)
+        end)
+    end },
+    { id = "enhanced", text = "给别人口", fn = function(target)
+        followStates2.enhanced = true
+        local char = getLocalChar()
+        if not char then return end
+        local root = char:FindFirstChild("HumanoidRootPart")
+        if not root then return end
+        disableCollision(char)
+        local hum = char:FindFirstChildOfClass("Humanoid")
+        if hum then hum.Sit = true end
+        PState.conns.follow2_enhanced = PRunService.Heartbeat:Connect(function()
+            pcall(function()
+                if not followStates2.enhanced or not char.Parent then return end
+                if not target.Character then stopAllFollows2() return end
+                local tr = target.Character:FindFirstChild("HumanoidRootPart")
+                if not tr then return end
+                root.CFrame = tr.CFrame * CFrame.new(0, -1, -0.5)
+                if hum then hum.Sit = true end
+            end)
+        end)
+    end },
+}
+
+for _, ft in ipairs(followToggles2) do
+    FollowBox2:AddToggle("F2_" .. ft.id, { Text = ft.text, Default = false }):OnChanged(function(v)
+        if v then
+            stopAllFollows2()
+            if followTargetName == "" then pNotify("提示", "请先选择玩家") return end
+            local target = getTargetPlayer(followTargetName)
+            if target then
+                ft.fn(target)
+                pNotify("跟随", "已开启: " .. ft.text)
+            end
+        else
+            stopAllFollows2()
+            pNotify("停止", "已停止所有跟随")
         end
-    end
+    end)
+end
+
+FollowBox2:AddButton("停止所有跟随", function()
+    stopAllFollows2()
+    pNotify("停止", "已停止所有恶搞跟随")
 end)
 
 -- ============================================
@@ -288,22 +907,55 @@ local function applyWalkSpeed()
     end
 end
 
--- 2. 穿墙模式 (Noclip)
+-- 2. 穿墙模式 (Noclip) - BS源码版
 local noclipActive = false
 local noclipConn = nil
+local noclipCharAddedConn = nil
+local noclipDescendantConns = {}
+local noclipOriginalCollisions = {}
+
+local function setupNoclipForChar(character)
+    if not character then return end
+    for _, part in pairs(character:GetDescendants()) do
+        if part:IsA("BasePart") then
+            if not noclipOriginalCollisions[part] then
+                noclipOriginalCollisions[part] = part.CanCollide
+            end
+            part.CanCollide = false
+        end
+    end
+    local dc = character.DescendantAdded:Connect(function(descendant)
+        if descendant:IsA("BasePart") then
+            if not noclipOriginalCollisions[descendant] then
+                noclipOriginalCollisions[descendant] = descendant.CanCollide
+            end
+            descendant.CanCollide = false
+        end
+    end)
+    noclipDescendantConns[character] = dc
+end
 
 local function startNoclip()
     noclipActive = true
     if noclipConn then return end
+    local char = CharLocalPlayer.Character
+    if char then setupNoclipForChar(char) end
     noclipConn = CharRunService.Stepped:Connect(function()
-        if not noclipActive or not charCharacter or not charCharacter.Parent then return end
-        pcall(function()
-            for _, part in pairs(charCharacter:GetDescendants()) do
-                if part:IsA("BasePart") and part.Name ~= "HumanoidRootPart" then
-                    part.CanCollide = false
-                end
+        if not noclipActive then return end
+        local currentChar = CharLocalPlayer.Character
+        if not currentChar then return end
+        for _, part in pairs(currentChar:GetDescendants()) do
+            if part:IsA("BasePart") then
+                part.CanCollide = false
             end
-        end)
+        end
+    end)
+    if noclipCharAddedConn then noclipCharAddedConn:Disconnect() end
+    noclipCharAddedConn = CharLocalPlayer.CharacterAdded:Connect(function(newChar)
+        if noclipActive then
+            task.wait()
+            setupNoclipForChar(newChar)
+        end
     end)
 end
 
@@ -313,14 +965,20 @@ local function stopNoclip()
         noclipConn:Disconnect()
         noclipConn = nil
     end
-    if not charCharacter or not charCharacter.Parent then return end
-    pcall(function()
-        for _, part in pairs(charCharacter:GetDescendants()) do
-            if part:IsA("BasePart") and part.Name ~= "HumanoidRootPart" then
-                part.CanCollide = true
-            end
+    if noclipCharAddedConn then
+        noclipCharAddedConn:Disconnect()
+        noclipCharAddedConn = nil
+    end
+    for part, originalState in pairs(noclipOriginalCollisions) do
+        if part and part.Parent then
+            part.CanCollide = originalState
         end
-    end)
+    end
+    for character, conn in pairs(noclipDescendantConns) do
+        if conn then conn:Disconnect() end
+    end
+    noclipDescendantConns = {}
+    noclipOriginalCollisions = {}
 end
 
 -- 3. 无限跳 (JumpRequest触发连续跳跃)
@@ -378,30 +1036,24 @@ charBind("WallClimb", CharRunService.Heartbeat:Connect(function()
     end)
 end))
 
--- 7. 反挂机 (杂项)
-local AntiAfkThread = nil
+-- 7. 反挂机 (杂项) - VirtualUser版
+local AntiAfkConn = nil
 local function startAntiAfk()
-    if AntiAfkThread then return end
-    AntiAfkThread = task.spawn(function()
-        while CharStates.AntiAfk.Enabled do
-            task.wait(math.random(15, 30))
-            pcall(function()
-                CharVirtualInputManager:SendKeyEvent(true, Enum.KeyCode.Space, false, game)
-                task.wait(0.05)
-                CharVirtualInputManager:SendKeyEvent(false, Enum.KeyCode.Space, false, game)
-            end)
-            pcall(function()
-                CharVirtualInputManager:SendKeyEvent(true, Enum.KeyCode.W, false, game)
-                task.wait(0.1)
-                CharVirtualInputManager:SendKeyEvent(false, Enum.KeyCode.W, false, game)
-            end)
-        end
+    if AntiAfkConn then return end
+    local VirtualUser = game:GetService("VirtualUser")
+    AntiAfkConn = CharLocalPlayer.Idled:Connect(function()
+        pcall(function()
+            VirtualUser:CaptureController()
+            VirtualUser:ClickButton2(Vector2.new())
+        end)
     end)
 end
 
 local function stopAntiAfk()
-    CharStates.AntiAfk.Enabled = false
-    AntiAfkThread = nil
+    if AntiAfkConn then
+        AntiAfkConn:Disconnect()
+        AntiAfkConn = nil
+    end
 end
 
 -- 死亡后重新应用所有已开启的功能
@@ -410,7 +1062,7 @@ local function reapplyAllStates()
     if not charCharacter or not charHumanoid then return end
     if CharStates.WalkSpeed.Enabled then applyWalkSpeed() end
     if CharStates.SuperJump.Enabled then applySuperJump() end
-    if noclipActive then startNoclip() end
+    if CharStates.Noclip.Enabled then startNoclip() end
 end
 
 CharLocalPlayer.CharacterAdded:Connect(function(c)
@@ -1333,862 +1985,6 @@ ESPRightBox:AddSlider("ESP_MaxDist", { Text = "最大显示距离", Default = 20
     ESPConfig.ESP_MaxDist = Value
 end)
 
--- ============================================
--- 玩家标签页 - 信息/甩飞/坐头/传送/监视/跟随
--- ============================================
-do
-local Tabs_Player = Window:AddTab("玩家", "users")
-
-local RunService = game:GetService("RunService")
-local LocalPlayer = game.Players.LocalPlayer
-
--- 公共状态
-local PState = {
-    selectedPlayer = nil,
-    conns = {},
-    threads = {},
-}
-
-local function pNotify(title, text)
-    pcall(function()
-        game.StarterGui:SetCore("SendNotification", { Title = title, Text = text, Duration = 3 })
-    end)
-end
-
-local function getLocalChar()
-    return LocalPlayer.Character
-end
-
-local function getTargetPlayer(name)
-    for _, p in ipairs(game.Players:GetPlayers()) do
-        if p.Name == name or p.DisplayName == name then return p end
-    end
-    return nil
-end
-
-local function disableCollision(char)
-    if not char then return end
-    for _, part in ipairs(char:GetDescendants()) do
-        if part:IsA("BasePart") then part.CanCollide = false end
-    end
-end
-
-local function enableCollision(char)
-    if not char then return end
-    for _, part in ipairs(char:GetDescendants()) do
-        if part:IsA("BasePart") then part.CanCollide = true end
-    end
-end
-
-local function stopAllConns()
-    for name, conn in pairs(PState.conns) do
-        if typeof(conn) == "RBXScriptConnection" then
-            conn:Disconnect()
-            PState.conns[name] = nil
-        end
-    end
-    for _, thread in ipairs(PState.threads) do
-        if thread then task.cancel(thread) end
-    end
-    PState.threads = {}
-end
-
--- ============================================
--- 1. 信息功能
--- ============================================
-local InfoBox = Tabs_Player:AddLeftGroupbox("信息")
-local lp = LocalPlayer
-InfoBox:AddLabel("用户名: " .. lp.Name)
-InfoBox:AddLabel("显示名称: " .. lp.DisplayName)
-InfoBox:AddLabel("用户ID: " .. lp.UserId)
-InfoBox:AddLabel("账户年龄(天): " .. lp.AccountAge)
-InfoBox:AddLabel("语言: " .. lp.LocaleId)
-local execName = "未知"
-pcall(function() execName = identifyexecutor() end)
-InfoBox:AddLabel("注入器: " .. execName)
-InfoBox:AddLabel("游戏ID: " .. tostring(game.PlaceId))
-InfoBox:AddLabel("服务器ID: " .. tostring(game.JobId))
-InfoBox:AddLabel("Roblox版本: " .. version())
-InfoBox:AddLabel("设备: " .. (game:GetService("UserInputService").TouchEnabled and "移动设备" or "电脑"))
-
-InfoBox:AddButton("复制所有信息", function()
-    local info = {}
-    table.insert(info, "=== XJW中心 - 信息 ===")
-    table.insert(info, "用户名: " .. lp.Name)
-    table.insert(info, "显示名称: " .. lp.DisplayName)
-    table.insert(info, "用户ID: " .. lp.UserId)
-    table.insert(info, "账户年龄(天): " .. lp.AccountAge)
-    table.insert(info, "注入器: " .. execName)
-    table.insert(info, "游戏ID: " .. tostring(game.PlaceId))
-    table.insert(info, "服务器ID: " .. tostring(game.JobId))
-    table.insert(info, "Roblox版本: " .. version())
-    table.insert(info, "=== " .. os.date("%Y-%m-%d %H:%M:%S") .. " ===")
-    pcall(function() setclipboard(table.concat(info, "\n")) end)
-    pNotify("成功", "信息已复制到剪贴板")
-end)
-
--- ============================================
--- 公共玩家选择器
--- ============================================
-local PlayerSelectBox = Tabs_Player:AddLeftGroupbox("选择玩家")
-local playerDropdown = PlayerSelectBox:AddDropdown("P_PlayerSelect", {
-    Text = "选择目标玩家",
-    Values = {},
-    Default = "",
-    Multi = false,
-})
-playerDropdown:OnChanged(function(v)
-    PState.selectedPlayer = v
-end)
-
-PlayerSelectBox:AddButton("刷新玩家列表", function()
-    local names = {}
-    for _, p in ipairs(game.Players:GetPlayers()) do
-        if p ~= LocalPlayer then table.insert(names, p.Name) end
-    end
-    playerDropdown:SetValues(names)
-    pNotify("刷新", "已刷新玩家列表")
-end)
-
--- ============================================
--- 2. 甩飞功能
--- ============================================
-local FlingBox = Tabs_Player:AddLeftGroupbox("甩飞功能")
-
-local flingLoops = { single = false, all = false }
-
-local function SkidFling(targetPlayer)
-    local Character = LocalPlayer.Character
-    if not Character then return end
-    local Humanoid = Character:FindFirstChildOfClass("Humanoid")
-    local RootPart = Humanoid and Humanoid.RootPart
-    if not RootPart then return end
-
-    local TCharacter = targetPlayer.Character
-    if not TCharacter then return end
-    local THumanoid = TCharacter:FindFirstChildOfClass("Humanoid")
-    local TRootPart = THumanoid and THumanoid.RootPart
-    local THead = TCharacter:FindFirstChild("Head")
-    local Accessory = TCharacter:FindFirstChildOfClass("Accessory")
-    local Handle = Accessory and Accessory:FindFirstChild("Handle")
-
-    if RootPart.Velocity.Magnitude < 50 then
-        getgenv().OldPos = RootPart.CFrame
-    end
-    if THumanoid and THumanoid.Sit then return end
-    if THead then
-        workspace.CurrentCamera.CameraSubject = THead
-    elseif Handle then
-        workspace.CurrentCamera.CameraSubject = Handle
-    elseif THumanoid then
-        workspace.CurrentCamera.CameraSubject = THumanoid
-    end
-
-    local FPos = function(BasePart, Pos, Ang)
-        RootPart.CFrame = CFrame.new(BasePart.Position) * Pos * Ang
-        Character:SetPrimaryPartCFrame(CFrame.new(BasePart.Position) * Pos * Ang)
-        RootPart.Velocity = Vector3.new(9e7, 9e7 * 10, 9e7)
-        RootPart.RotVelocity = Vector3.new(9e8, 9e8, 9e8)
-    end
-
-    local SFBasePart = function(BasePart)
-        local TimeToWait = 2
-        local Time = tick()
-        local Angle = 0
-        repeat
-            if RootPart and THumanoid then
-                if BasePart.Velocity.Magnitude < 50 then
-                    Angle = Angle + 100
-                    FPos(BasePart, CFrame.new(0, 1.5, 0) + THumanoid.MoveDirection * BasePart.Velocity.Magnitude / 1.25, CFrame.Angles(math.rad(Angle), 0, 0))
-                    task.wait()
-                    FPos(BasePart, CFrame.new(0, -1.5, 0) + THumanoid.MoveDirection * BasePart.Velocity.Magnitude / 1.25, CFrame.Angles(math.rad(Angle), 0, 0))
-                    task.wait()
-                    FPos(BasePart, CFrame.new(2.25, 1.5, -2.25) + THumanoid.MoveDirection * BasePart.Velocity.Magnitude / 1.25, CFrame.Angles(math.rad(Angle), 0, 0))
-                    task.wait()
-                    FPos(BasePart, CFrame.new(-2.25, -1.5, 2.25) + THumanoid.MoveDirection * BasePart.Velocity.Magnitude / 1.25, CFrame.Angles(math.rad(Angle), 0, 0))
-                    task.wait()
-                    FPos(BasePart, CFrame.new(0, 1.5, 0) + THumanoid.MoveDirection, CFrame.Angles(math.rad(Angle), 0, 0))
-                    task.wait()
-                    FPos(BasePart, CFrame.new(0, -1.5, 0) + THumanoid.MoveDirection, CFrame.Angles(math.rad(Angle), 0, 0))
-                    task.wait()
-                else
-                    FPos(BasePart, CFrame.new(0, 1.5, THumanoid.WalkSpeed), CFrame.Angles(math.rad(90), 0, 0))
-                    task.wait()
-                    FPos(BasePart, CFrame.new(0, -1.5, -THumanoid.WalkSpeed), CFrame.Angles(0, 0, 0))
-                    task.wait()
-                    FPos(BasePart, CFrame.new(0, 1.5, THumanoid.WalkSpeed), CFrame.Angles(math.rad(90), 0, 0))
-                    task.wait()
-                    FPos(BasePart, CFrame.new(0, 1.5, TRootPart.Velocity.Magnitude / 1.25), CFrame.Angles(math.rad(90), 0, 0))
-                    task.wait()
-                    FPos(BasePart, CFrame.new(0, -1.5, -TRootPart.Velocity.Magnitude / 1.25), CFrame.Angles(0, 0, 0))
-                    task.wait()
-                    FPos(BasePart, CFrame.new(0, 1.5, TRootPart.Velocity.Magnitude / 1.25), CFrame.Angles(math.rad(90), 0, 0))
-                    task.wait()
-                    FPos(BasePart, CFrame.new(0, -1.5, 0), CFrame.Angles(math.rad(90), 0, 0))
-                    task.wait()
-                    FPos(BasePart, CFrame.new(0, -1.5, 0), CFrame.Angles(0, 0, 0))
-                    task.wait()
-                    FPos(BasePart, CFrame.new(0, -1.5, 0), CFrame.Angles(math.rad(-90), 0, 0))
-                    task.wait()
-                    FPos(BasePart, CFrame.new(0, -1.5, 0), CFrame.Angles(0, 0, 0))
-                    task.wait()
-                end
-            else
-                break
-            end
-        until BasePart.Velocity.Magnitude > 500 or BasePart.Parent ~= targetPlayer.Character or targetPlayer.Parent ~= game.Players or not targetPlayer.Character == TCharacter or THumanoid.Sit or Humanoid.Health <= 0 or tick() > Time + TimeToWait
-    end
-
-    workspace.FallenPartsDestroyHeight = 0/0
-    local BV = Instance.new("BodyVelocity")
-    BV.Name = "EpixVel"
-    BV.Parent = RootPart
-    BV.Velocity = Vector3.new(9e8, 9e8, 9e8)
-    BV.MaxForce = Vector3.new(1/0, 1/0, 1/0)
-    Humanoid:SetStateEnabled(Enum.HumanoidStateType.Seated, false)
-
-    if TRootPart and THead then
-        if (TRootPart.CFrame.p - THead.CFrame.p).Magnitude > 5 then
-            SFBasePart(THead)
-        else
-            SFBasePart(TRootPart)
-        end
-    elseif TRootPart then
-        SFBasePart(TRootPart)
-    elseif THead then
-        SFBasePart(THead)
-    elseif Handle then
-        SFBasePart(Handle)
-    else
-        return
-    end
-
-    BV:Destroy()
-    Humanoid:SetStateEnabled(Enum.HumanoidStateType.Seated, true)
-    workspace.CurrentCamera.CameraSubject = Humanoid
-
-    repeat
-        RootPart.CFrame = getgenv().OldPos * CFrame.new(0, .5, 0)
-        Character:SetPrimaryPartCFrame(getgenv().OldPos * CFrame.new(0, .5, 0))
-        Humanoid:ChangeState("GettingUp")
-        table.foreach(Character:GetChildren(), function(_, x)
-            if x:IsA("BasePart") then
-                x.Velocity, x.RotVelocity = Vector3.new(), Vector3.new()
-            end
-        end)
-        task.wait()
-    until (RootPart.Position - getgenv().OldPos.p).Magnitude < 25
-    workspace.FallenPartsDestroyHeight = getgenv().FPDH
-end
-
-FlingBox:AddButton("甩飞一次指定玩家", function()
-    if not PState.selectedPlayer then pNotify("错误", "请先选择玩家") return end
-    local target = getTargetPlayer(PState.selectedPlayer)
-    if not target then pNotify("错误", "未找到玩家") return end
-    pcall(function() SkidFling(target) end)
-    pNotify("成功", "甩飞玩家一次")
-end)
-
-FlingBox:AddToggle("P_LoopFlingSingle", { Text = "循环甩飞指定玩家", Default = false }):OnChanged(function(v)
-    flingLoops.single = v
-    if v then
-        local thread = task.spawn(function()
-            while flingLoops.single do
-                if PState.selectedPlayer then
-                    local target = getTargetPlayer(PState.selectedPlayer)
-                    if target then pcall(function() SkidFling(target) end) end
-                end
-                task.wait(0.1)
-            end
-        end)
-        table.insert(PState.threads, thread)
-        pNotify("开始", "循环甩飞玩家")
-    else
-        pNotify("停止", "循环甩飞已停止")
-    end
-end)
-
-FlingBox:AddButton("甩飞一次所有玩家", function()
-    for _, p in ipairs(game.Players:GetPlayers()) do
-        if p ~= LocalPlayer then
-            pcall(function() SkidFling(p) end)
-        end
-    end
-    pNotify("成功", "甩飞所有玩家一次")
-end)
-
-FlingBox:AddToggle("P_LoopFlingAll", { Text = "循环甩飞所有玩家", Default = false }):OnChanged(function(v)
-    flingLoops.all = v
-    if v then
-        local thread = task.spawn(function()
-            while flingLoops.all do
-                for _, p in ipairs(game.Players:GetPlayers()) do
-                    if not flingLoops.all then break end
-                    if p ~= LocalPlayer then
-                        pcall(function() SkidFling(p) end)
-                    end
-                end
-                task.wait(0.1)
-            end
-        end)
-        table.insert(PState.threads, thread)
-        pNotify("开始", "循环甩飞所有玩家")
-    else
-        pNotify("停止", "循环甩飞所有玩家已停止")
-    end
-end)
-
-FlingBox:AddButton("停止所有甩飞", function()
-    flingLoops.single = false
-    flingLoops.all = false
-    pNotify("停止", "已停止所有甩飞")
-end)
-
--- ============================================
--- 3. 坐头功能
--- ============================================
-local HeadSitBox = Tabs_Player:AddLeftGroupbox("坐头功能")
-local headSitActive = false
-local loopHeadSit = false
-
-local function stopHeadSit()
-    headSitActive = false
-    if PState.conns.headSit then
-        PState.conns.headSit:Disconnect()
-        PState.conns.headSit = nil
-    end
-    local char = getLocalChar()
-    if char then
-        local hum = char:FindFirstChildOfClass("Humanoid")
-        if hum then hum.Sit = false end
-        enableCollision(char)
-    end
-    pNotify("坐头停止", "已停止坐头")
-end
-
-local function startHeadSit(playerName)
-    if PState.conns.headSit then
-        PState.conns.headSit:Disconnect()
-        PState.conns.headSit = nil
-    end
-    headSitActive = true
-    local char = getLocalChar()
-    if not char then pNotify("失败", "角色未加载") headSitActive = false return end
-    local hum = char:FindFirstChildOfClass("Humanoid")
-    local root = char:FindFirstChild("HumanoidRootPart")
-    if not hum or not root then pNotify("失败", "角色缺少部件") headSitActive = false return end
-
-    disableCollision(char)
-    hum.Sit = true
-
-    PState.conns.headSit = RunService.Heartbeat:Connect(function()
-        pcall(function()
-            if not headSitActive or not char.Parent then
-                if loopHeadSit and LocalPlayer.Character then
-                    task.wait(1)
-                    if loopHeadSit and PState.selectedPlayer then
-                        startHeadSit(PState.selectedPlayer)
-                    end
-                else
-                    stopHeadSit()
-                end
-                return
-            end
-            local target = getTargetPlayer(playerName)
-            if not target or not target.Character then
-                if loopHeadSit then
-                    task.wait(1)
-                    if loopHeadSit and PState.selectedPlayer then
-                        startHeadSit(PState.selectedPlayer)
-                    end
-                else
-                    stopHeadSit()
-                end
-                return
-            end
-            local targetRoot = target.Character:FindFirstChild("HumanoidRootPart")
-            if not targetRoot then return end
-            root.CFrame = targetRoot.CFrame * CFrame.new(0, 1.6, 0.4)
-            disableCollision(char)
-        end)
-    end)
-    pNotify("坐头启动", "已开始坐 " .. tostring(playerName) .. " 的头")
-end
-
-HeadSitBox:AddButton("坐选定玩家头上", function()
-    if not PState.selectedPlayer then pNotify("提示", "请先选择玩家") return end
-    stopHeadSit()
-    startHeadSit(PState.selectedPlayer)
-end)
-
-HeadSitBox:AddToggle("P_LoopHeadSit", { Text = "循环坐头(死亡后继续)", Default = false }):OnChanged(function(v)
-    loopHeadSit = v
-    if v and PState.selectedPlayer then
-        stopHeadSit()
-        startHeadSit(PState.selectedPlayer)
-    else
-        stopHeadSit()
-    end
-end)
-
-HeadSitBox:AddButton("停止坐头", stopHeadSit)
-
--- ============================================
--- 4. 传送功能
--- ============================================
-local TeleportBox = Tabs_Player:AddLeftGroupbox("传送功能")
-local tpLoops = { single = false, all = false }
-
-local function teleportToPlayer(targetPlayer)
-    local char = getLocalChar()
-    if not char then return end
-    local root = char:FindFirstChild("HumanoidRootPart")
-    if not root then return end
-    local targetRoot = targetPlayer.Character and targetPlayer.Character:FindFirstChild("HumanoidRootPart")
-    if targetRoot then
-        root.CFrame = targetRoot.CFrame
-    end
-end
-
-TeleportBox:AddButton("传送到选定玩家", function()
-    if not PState.selectedPlayer then pNotify("提示", "请先选择玩家") return end
-    local target = getTargetPlayer(PState.selectedPlayer)
-    if not target or not target.Character then pNotify("失败", "目标不存在") return end
-    teleportToPlayer(target)
-    pNotify("成功", "已传送到 " .. target.Name)
-end)
-
-TeleportBox:AddToggle("P_LoopTPSingle", { Text = "循环传送同个玩家", Default = false }):OnChanged(function(v)
-    tpLoops.single = v
-    if v then
-        local thread = task.spawn(function()
-            while tpLoops.single do
-                if PState.selectedPlayer then
-                    local target = getTargetPlayer(PState.selectedPlayer)
-                    if target and target.Character then teleportToPlayer(target) end
-                end
-                task.wait(0.3)
-            end
-        end)
-        table.insert(PState.threads, thread)
-    end
-end)
-
-TeleportBox:AddToggle("P_LoopTPAll", { Text = "循环传送所有玩家", Default = false }):OnChanged(function(v)
-    tpLoops.all = v
-    if v then
-        local thread = task.spawn(function()
-            while tpLoops.all do
-                for _, p in ipairs(game.Players:GetPlayers()) do
-                    if not tpLoops.all then break end
-                    if p ~= LocalPlayer and p.Character then
-                        teleportToPlayer(p)
-                        task.wait(0.3)
-                    end
-                end
-            end
-        end)
-        table.insert(PState.threads, thread)
-    end
-end)
-
--- ============================================
--- 5. 视角监视
--- ============================================
-local MonitorBox = Tabs_Player:AddRightGroupbox("视角监视")
-
-local function stopMonitor()
-    if PState.conns.monitor then
-        PState.conns.monitor:Disconnect()
-        PState.conns.monitor = nil
-    end
-    local char = getLocalChar()
-    if char then
-        local hum = char:FindFirstChildOfClass("Humanoid")
-        if hum then workspace.CurrentCamera.CameraSubject = hum end
-    end
-    pNotify("监视停止", "已停止监视")
-end
-
-local function startMonitor(playerName)
-    if PState.conns.monitor then
-        PState.conns.monitor:Disconnect()
-        PState.conns.monitor = nil
-    end
-    local camera = workspace.CurrentCamera
-    if not camera then return end
-
-    PState.conns.monitor = RunService.Heartbeat:Connect(function()
-        pcall(function()
-            local target = getTargetPlayer(playerName)
-            if not target or not target.Character then
-                stopMonitor()
-                return
-            end
-            local subject = target.Character:FindFirstChildOfClass("Humanoid")
-            if not subject then
-                subject = target.Character:FindFirstChild("Head") or target.Character:FindFirstChild("HumanoidRootPart")
-            end
-            if subject then
-                camera.CameraSubject = subject
-            end
-        end)
-    end)
-    pNotify("监视启动", "已开始监视 " .. playerName)
-end
-
-MonitorBox:AddButton("开始监视选定玩家", function()
-    if not PState.selectedPlayer then pNotify("提示", "请先选择玩家") return end
-    stopMonitor()
-    startMonitor(PState.selectedPlayer)
-end)
-
-MonitorBox:AddButton("停止监视", stopMonitor)
-
--- ============================================
--- 6. 恶搞跟随 (14种模式)
--- ============================================
-local FollowBox = Tabs_Player:AddRightGroupbox("恶搞跟随")
-local followStates = {}
-
-local function stopAllFollows()
-    for name, _ in pairs(followStates) do
-        followStates[name] = false
-    end
-    for name, conn in pairs(PState.conns) do
-        if name:find("follow_") then
-            conn:Disconnect()
-            PState.conns[name] = nil
-        end
-    end
-    local char = getLocalChar()
-    if char then enableCollision(char) end
-end
-
--- 旋转环绕
-local function startOrbit(target)
-    followStates.orbit = true
-    local char = getLocalChar()
-    if not char then return end
-    local root = char:FindFirstChild("HumanoidRootPart")
-    if not root then return end
-    disableCollision(char)
-    local angle = 0
-    PState.conns.follow_orbit = RunService.Heartbeat:Connect(function()
-        pcall(function()
-            if not followStates.orbit or not char.Parent then return end
-            if not target.Character then stopAllFollows() return end
-            local tr = target.Character:FindFirstChild("HumanoidRootPart")
-            if not tr then return end
-            angle = angle + 0.05
-            if angle > 360 then angle = 0 end
-            root.CFrame = CFrame.new(tr.Position + Vector3.new(math.cos(angle)*5, 2, math.sin(angle)*5), tr.Position)
-        end)
-    end)
-end
-
--- 镜像
-local function startMirror(target)
-    followStates.mirror = true
-    local char = getLocalChar()
-    if not char then return end
-    local root = char:FindFirstChild("HumanoidRootPart")
-    if not root then return end
-    disableCollision(char)
-    PState.conns.follow_mirror = RunService.Heartbeat:Connect(function()
-        pcall(function()
-            if not followStates.mirror or not char.Parent then return end
-            if not target.Character then stopAllFollows() return end
-            local tr = target.Character:FindFirstChild("HumanoidRootPart")
-            if not tr then return end
-            local pos = tr.CFrame * CFrame.new(4, 0, 0)
-            root.CFrame = CFrame.new(pos.Position) * CFrame.Angles(0, math.pi, 0)
-        end)
-    end)
-end
-
--- 漂浮
-local function startFloat(target)
-    followStates.float = true
-    local char = getLocalChar()
-    if not char then return end
-    local root = char:FindFirstChild("HumanoidRootPart")
-    if not root then return end
-    disableCollision(char)
-    PState.conns.follow_float = RunService.Heartbeat:Connect(function()
-        pcall(function()
-            if not followStates.float or not char.Parent then return end
-            if not target.Character then stopAllFollows() return end
-            local tr = target.Character:FindFirstChild("HumanoidRootPart")
-            if not tr then return end
-            root.CFrame = CFrame.new(tr.Position + Vector3.new(0, 3, 0))
-        end)
-    end)
-end
-
--- 影子
-local function startShadow(target)
-    followStates.shadow = true
-    local char = getLocalChar()
-    if not char then return end
-    local root = char:FindFirstChild("HumanoidRootPart")
-    if not root then return end
-    disableCollision(char)
-    PState.conns.follow_shadow = RunService.Heartbeat:Connect(function()
-        pcall(function()
-            if not followStates.shadow or not char.Parent then return end
-            if not target.Character then stopAllFollows() return end
-            local tr = target.Character:FindFirstChild("HumanoidRootPart")
-            if not tr then return end
-            root.CFrame = tr.CFrame * CFrame.new(0, -2.8, 0)
-        end)
-    end)
-end
-
--- 反向跟随
-local function startAntiFollow(target)
-    followStates.anti = true
-    local char = getLocalChar()
-    if not char then return end
-    local root = char:FindFirstChild("HumanoidRootPart")
-    if not root then return end
-    PState.conns.follow_anti = RunService.Heartbeat:Connect(function()
-        pcall(function()
-            if not followStates.anti or not char.Parent then return end
-            if not target.Character then stopAllFollows() return end
-            local tr = target.Character:FindFirstChild("HumanoidRootPart")
-            if not tr then return end
-            local dist = (root.Position - tr.Position).Magnitude
-            if dist < 8 then
-                local away = (root.Position - tr.Position).Unit
-                root.CFrame = CFrame.new(tr.Position + away * 8)
-            end
-        end)
-    end)
-end
-
--- 旋转
-local function startSpin(target)
-    followStates.spin = true
-    local char = getLocalChar()
-    if not char then return end
-    local root = char:FindFirstChild("HumanoidRootPart")
-    if not root then return end
-    disableCollision(char)
-    local angle = 0
-    PState.conns.follow_spin = RunService.Heartbeat:Connect(function()
-        pcall(function()
-            if not followStates.spin or not char.Parent then return end
-            if not target.Character then stopAllFollows() return end
-            local tr = target.Character:FindFirstChild("HumanoidRootPart")
-            if not tr then return end
-            angle = angle + 5
-            root.CFrame = CFrame.new(tr.Position + Vector3.new(0, 2, 0)) * CFrame.Angles(0, math.rad(angle), 0)
-        end)
-    end)
-end
-
--- 抖动
-local function startShake(target)
-    followStates.shake = true
-    local char = getLocalChar()
-    if not char then return end
-    local root = char:FindFirstChild("HumanoidRootPart")
-    if not root then return end
-    disableCollision(char)
-    PState.conns.follow_shake = RunService.Heartbeat:Connect(function()
-        pcall(function()
-            if not followStates.shake or not char.Parent then return end
-            if not target.Character then stopAllFollows() return end
-            local tr = target.Character:FindFirstChild("HumanoidRootPart")
-            if not tr then return end
-            local offset = Vector3.new(math.random(-2, 2), math.random(0, 3), math.random(-2, 2))
-            root.CFrame = CFrame.new(tr.Position + offset)
-        end)
-    end)
-end
-
--- 站头后
-local function startFaceStand(target)
-    followStates.face = true
-    local char = getLocalChar()
-    if not char then return end
-    local root = char:FindFirstChild("HumanoidRootPart")
-    if not root then return end
-    disableCollision(char)
-    PState.conns.follow_face = RunService.Heartbeat:Connect(function()
-        pcall(function()
-            if not followStates.face or not char.Parent then return end
-            if not target.Character then stopAllFollows() return end
-            local tr = target.Character:FindFirstChild("HumanoidRootPart")
-            if not tr then return end
-            root.CFrame = tr.CFrame * CFrame.new(0, 3.5, 0)
-        end)
-    end)
-end
-
--- 坐前面
-local function startBackSit(target)
-    followStates.back = true
-    local char = getLocalChar()
-    if not char then return end
-    local root = char:FindFirstChild("HumanoidRootPart")
-    if not root then return end
-    local hum = char:FindFirstChildOfClass("Humanoid")
-    if hum then hum.Sit = true end
-    disableCollision(char)
-    PState.conns.follow_back = RunService.Heartbeat:Connect(function()
-        pcall(function()
-            if not followStates.back or not char.Parent then return end
-            if not target.Character then stopAllFollows() return end
-            local tr = target.Character:FindFirstChild("HumanoidRootPart")
-            if not tr then return end
-            root.CFrame = tr.CFrame * CFrame.new(0, 0, 2)
-            if hum then hum.Sit = true end
-        end)
-    end)
-end
-
--- 动画跟随
-local function startAutoFollow(target)
-    followStates.auto = true
-    local char = getLocalChar()
-    if not char then return end
-    local root = char:FindFirstChild("HumanoidRootPart")
-    if not root then return end
-    disableCollision(char)
-    PState.conns.follow_auto = RunService.Heartbeat:Connect(function()
-        pcall(function()
-            if not followStates.auto or not char.Parent then return end
-            if not target.Character then stopAllFollows() return end
-            local tr = target.Character:FindFirstChild("HumanoidRootPart")
-            if not tr then return end
-            root.CFrame = tr.CFrame * CFrame.new(0, 0, -3)
-        end)
-    end)
-end
-
--- 口交
-local function startSuckFollow(target)
-    followStates.suck = true
-    local char = getLocalChar()
-    if not char then return end
-    local root = char:FindFirstChild("HumanoidRootPart")
-    if not root then return end
-    disableCollision(char)
-    local hum = char:FindFirstChildOfClass("Humanoid")
-    if hum then hum.Sit = true end
-    PState.conns.follow_suck = RunService.Heartbeat:Connect(function()
-        pcall(function()
-            if not followStates.suck or not char.Parent then return end
-            if not target.Character then stopAllFollows() return end
-            local tr = target.Character:FindFirstChild("HumanoidRootPart")
-            if not tr then return end
-            root.CFrame = tr.CFrame * CFrame.new(0, -1, 1)
-            if hum then hum.Sit = true end
-        end)
-    end)
-end
-
--- 被超
-local function startSusFollow(target)
-    followStates.sus = true
-    local char = getLocalChar()
-    if not char then return end
-    local root = char:FindFirstChild("HumanoidRootPart")
-    if not root then return end
-    disableCollision(char)
-    PState.conns.follow_sus = RunService.Heartbeat:Connect(function()
-        pcall(function()
-            if not followStates.sus or not char.Parent then return end
-            if not target.Character then stopAllFollows() return end
-            local tr = target.Character:FindFirstChild("HumanoidRootPart")
-            if not tr then return end
-            root.CFrame = tr.CFrame * CFrame.new(0, 0, -1)
-        end)
-    end)
-end
-
--- 超别人
-local function startModernFollow(target)
-    followStates.modern = true
-    local char = getLocalChar()
-    if not char then return end
-    local root = char:FindFirstChild("HumanoidRootPart")
-    if not root then return end
-    disableCollision(char)
-    PState.conns.follow_modern = RunService.Heartbeat:Connect(function()
-        pcall(function()
-            if not followStates.modern or not char.Parent then return end
-            if not target.Character then stopAllFollows() return end
-            local tr = target.Character:FindFirstChild("HumanoidRootPart")
-            if not tr then return end
-            root.CFrame = tr.CFrame * CFrame.new(0, 0, 1)
-        end)
-    end)
-end
-
--- 给别人口
-local function startEnhancedSuck(target)
-    followStates.enhanced = true
-    local char = getLocalChar()
-    if not char then return end
-    local root = char:FindFirstChild("HumanoidRootPart")
-    if not root then return end
-    disableCollision(char)
-    local hum = char:FindFirstChildOfClass("Humanoid")
-    if hum then hum.Sit = true end
-    PState.conns.follow_enhanced = RunService.Heartbeat:Connect(function()
-        pcall(function()
-            if not followStates.enhanced or not char.Parent then return end
-            if not target.Character then stopAllFollows() return end
-            local tr = target.Character:FindFirstChild("HumanoidRootPart")
-            if not tr then return end
-            root.CFrame = tr.CFrame * CFrame.new(0, -1, -0.5)
-            if hum then hum.Sit = true end
-        end)
-    end)
-end
-
-local followToggles = {
-    { id = "P_Orbit", text = "旋转环绕", fn = startOrbit },
-    { id = "P_Mirror", text = "镜像", fn = startMirror },
-    { id = "P_Float", text = "漂浮", fn = startFloat },
-    { id = "P_Shadow", text = "影子", fn = startShadow },
-    { id = "P_AntiFollow", text = "反向跟随", fn = startAntiFollow },
-    { id = "P_Spin", text = "旋转", fn = startSpin },
-    { id = "P_Shake", text = "抖动", fn = startShake },
-    { id = "P_FaceStand", text = "站头后", fn = startFaceStand },
-    { id = "P_BackSit", text = "坐前面", fn = startBackSit },
-    { id = "P_AutoFollow", text = "动画跟随", fn = startAutoFollow },
-    { id = "P_Suck", text = "口交", fn = startSuckFollow },
-    { id = "P_Sus", text = "被超", fn = startSusFollow },
-    { id = "P_Modern", text = "超别人", fn = startModernFollow },
-    { id = "P_Enhanced", text = "给别人口", fn = startEnhancedSuck },
-}
-
-for _, ft in ipairs(followToggles) do
-    FollowBox:AddToggle(ft.id, { Text = ft.text, Default = false }):OnChanged(function(v)
-        if v then
-            stopAllFollows()
-            if not PState.selectedPlayer then pNotify("提示", "请先选择玩家") return end
-            local target = getTargetPlayer(PState.selectedPlayer)
-            if target then
-                ft.fn(target)
-                pNotify("跟随", "已开启: " .. ft.text)
-            end
-        else
-            stopAllFollows()
-            pNotify("停止", "已停止所有跟随")
-        end
-    end)
-end
-
-FollowBox:AddButton("停止所有跟随", function()
-    stopAllFollows()
-    pNotify("停止", "已停止所有恶搞跟随")
-end)
-end -- 玩家标签页 do...end
 -- ============================================================
 -- Tab: 高级 (Advanced)  —— 适配 Obsidian UI 库
 -- 依赖: 外部已创建 Window 对象
@@ -2303,17 +2099,6 @@ NightVisionBox:AddLabel("说明: 开启后用RunService持续锁定光照参数"
 -- 2. 踏空行走
 -- ============================================================
 local WalkAirBox = Tabs_Advanced:AddLeftGroupbox("踏空行走")
-
-WalkAirBox:AddButton("加载Float脚本", function()
-    local ok, err = pcall(function()
-        loadstring(game:HttpGet("https://raw.githubusercontent.com/.../Float.lua"))()
-    end)
-    if ok then
-        Notify("踏空行走", "Float脚本已加载", 3)
-    else
-        Notify("踏空行走", "加载失败: " .. tostring(err), 4)
-    end
-end)
 
 local walkAirEnabled  = false
 local walkAirPlatform = nil
@@ -2517,72 +2302,6 @@ OptimizeBox:AddLabel("说明: 关闭全局阴影/Bloom/ColorCorrection/粒子")
 -- ############################################################
 
 -- ============================================================
--- 5. 隐身功能
--- ============================================================
-local InvisBox = Tabs_Advanced:AddRightGroupbox("隐身功能")
-
-InvisBox:AddButton("隐身方案一", function()
-    local ok, err = pcall(function()
-        loadstring(game:HttpGet("https://pastebin.com/raw/AbCxYz12"))()
-    end)
-    if ok then
-        Notify("隐身", "隐身方案一已加载", 3)
-    else
-        Notify("隐身", "加载失败: " .. tostring(err), 4)
-    end
-end)
-
-InvisBox:AddButton("隐身方案二", function()
-    local ok, err = pcall(function()
-        loadstring(game:HttpGet("https://pastebin.com/raw/AbCxYz12"))()
-    end)
-    if ok then
-        Notify("隐身", "隐身方案二已加载", 3)
-    else
-        Notify("隐身", "加载失败: " .. tostring(err), 4)
-    end
-end)
-
-InvisBox:AddLabel("说明: 两种隐身方案，按需加载")
-
-
--- ============================================================
--- 6. 反挂机 (独立实现)
--- ============================================================
-local AntiAfkBox = Tabs_Advanced:AddRightGroupbox("反挂机")
-
-local antiAfkEnabled = false
-local antiAfkConn    = nil
-
-AntiAfkBox:AddToggle("AntiAfkToggle", {
-    Text    = "反挂机",
-    Default = false,
-    Tooltip = "监听Idled事件并模拟按键，防止被判定挂机"
-}):OnChanged(function(v)
-    antiAfkEnabled = v
-    if v then
-        if antiAfkConn then antiAfkConn:Disconnect() end
-        antiAfkConn = LocalPlayer.Idled:Connect(function()
-            pcall(function()
-                VirtualUser:CaptureController()
-                VirtualUser:ClickButton2(Vector2.new())
-            end)
-            Notify("反挂机", "检测到挂机，已模拟操作", 2)
-        end)
-        Notify("反挂机", "反挂机已开启", 3)
-    else
-        if antiAfkConn then
-            antiAfkConn:Disconnect()
-            antiAfkConn = nil
-        end
-        Notify("反挂机", "反挂机已关闭", 3)
-    end
-end)
-
-AntiAfkBox:AddLabel("说明: 独立实现，通过VirtualUser模拟操作")
-
-
--- ============================================================
 -- 7. 防踢功能
 -- ============================================================
 local AntiKickBox = Tabs_Advanced:AddRightGroupbox("防踢功能")
@@ -2724,9 +2443,7 @@ local LocalPlayer = Players.LocalPlayer
 
 -- 前置声明
 local CoordDropdown
-local AnimationDropdown
 local selectedCoord = ""
-local selectedAnimPack = ""
 
 -- 坐标存储 {name = Vector3}
 local SavedCoords = {}
@@ -2980,255 +2697,7 @@ CoordToolGroup:AddButton("复制当前坐标", function()
 end)
 
 -- ============================================================
--- 4. 动画包
--- ============================================================
--- 动画包数据：每个包含 idle(2个) walk run jump climb fall
-local AnimationPacks = {
-	["吸血鬼"] = {
-		idle = {10852992727, 10852993334},
-		walk = {10852995455},
-		run = {10852996012},
-		jump = {10852989555},
-		climb = {10852990123},
-		fall = {10852990890},
-	},
-	["英雄"] = {
-		idle = {8409679938, 8409680042},
-		walk = {8409678118},
-		run = {8409677138},
-		jump = {8409680678},
-		climb = {8409681438},
-		fall = {8409682158},
-	},
-	["经典僵尸"] = {
-		idle = {507766666, 507766951},
-		walk = {507777826},
-		run = {507767714},
-		jump = {507765000},
-		climb = {507770343},
-		fall = {507767968},
-	},
-	["法师"] = {
-		idle = {10220623841, 10220624011},
-		walk = {10220620801},
-		run = {10220621501},
-		jump = {10220624541},
-		climb = {10220625291},
-		fall = {10220626061},
-	},
-	["幽灵"] = {
-		idle = {9102066436, 9102066512},
-		walk = {9102064242},
-		run = {9102063518},
-		jump = {9102067232},
-		climb = {9102068002},
-		fall = {9102068768},
-	},
-	["长者"] = {
-		idle = {31154759, 31154765},
-		walk = {31154716},
-		run = {31154731},
-		jump = {31154739},
-		climb = {31154748},
-		fall = {31154754},
-	},
-	["悬浮"] = {
-		idle = {8922380208, 8922380312},
-		walk = {8922380508},
-		run = {8922380612},
-		jump = {8922380820},
-		climb = {8922380920},
-		fall = {8922381020},
-	},
-	["宇航员"] = {
-		idle = {8921204144, 8921204234},
-		walk = {8921201402},
-		run = {8921199464},
-		jump = {8921205942},
-		climb = {8921207471},
-		fall = {8921208973},
-	},
-	["忍者"] = {
-		idle = {656030078, 656030124},
-		walk = {656029944},
-		run = {656029918},
-		jump = {656030014},
-		climb = {656030052},
-		fall = {656030066},
-	},
-	["狼人"] = {
-		idle = {10815833120, 10815833420},
-		walk = {10815830235},
-		run = {10815831310},
-		jump = {10815834254},
-		climb = {10815835274},
-		fall = {10815835938},
-	},
-	["卡通"] = {
-		idle = {298860834, 298860872},
-		walk = {298860822},
-		run = {298860788},
-		jump = {298860846},
-		climb = {298860892},
-		fall = {298860904},
-	},
-	["海盗"] = {
-		idle = {7501779588, 7501779650},
-		walk = {7501778322},
-		run = {7501777758},
-		jump = {7501780100},
-		climb = {7501780670},
-		fall = {7501781140},
-	},
-	["潜行"] = {
-		idle = {10828853653, 10828853821},
-		walk = {10828850953},
-		run = {10828851753},
-		jump = {10828854573},
-		climb = {10828855573},
-		fall = {10828856453},
-	},
-	["玩具"] = {
-		idle = {782830788, 782830812},
-		walk = {782830698},
-		run = {782830646},
-		jump = {782830820},
-		climb = {782830892},
-		fall = {782830912},
-	},
-	["骑士"] = {
-		idle = {6570335262, 6570335382},
-		walk = {6570328971},
-		run = {6570330771},
-		jump = {6570336044},
-		climb = {6570336752},
-		fall = {6570337395},
-	},
-	["自信"] = {
-		idle = {8869686280, 8869686350},
-		walk = {8869684700},
-		run = {8869683546},
-		jump = {8869687476},
-		climb = {8869688474},
-		fall = {8869689270},
-	},
-	["流行明星"] = {
-		idle = {337960636, 337960672},
-		walk = {337960244},
-		run = {337960326},
-		jump = {337960402},
-		climb = {337960498},
-		fall = {337960578},
-	},
-	["公主"] = {
-		idle = {8409209258, 8409209330},
-		walk = {8409207526},
-		run = {8409206730},
-		jump = {8409209980},
-		climb = {8409210690},
-		fall = {8409211370},
-	},
-	["牛仔"] = {
-		idle = {1015788775, 1015788812},
-		walk = {1015788649},
-		run = {1015788525},
-		jump = {1015788909},
-		climb = {1015789005},
-		fall = {1015789091},
-	},
-	["巡逻"] = {
-		idle = {10276609148, 10276609321},
-		walk = {10276589092},
-		run = {10276589812},
-		jump = {10276594412},
-		climb = {10276600084},
-		fall = {10276601524},
-	},
-}
-
--- SetAnimations：替换角色 Animate 对象中的动画ID
-local function SetAnimations(pack)
-	local char = getCharacter()
-	if not char then
-		notify("动画", "未找到角色", 3)
-		return
-	end
-	local animate = char:FindFirstChild("Animate")
-	if not animate then
-		notify("动画", "未找到 Animate 对象", 3)
-		return
-	end
-
-	-- 通用设置：遍历文件夹内所有 Animation 对象，按顺序替换ID
-	local function setAnimId(folderName, ids)
-		pcall(function()
-			local folder = animate:FindFirstChild(folderName)
-			if not folder then return end
-			local count = 0
-			for _, child in ipairs(folder:GetChildren()) do
-				if child:IsA("Animation") then
-					count = count + 1
-					local id = ids[count] or ids[1]
-					if id then
-						child.AnimationId = "rbxassetid://" .. tostring(id)
-					end
-				end
-			end
-		end)
-	end
-
-	setAnimId("idle", pack.idle)
-	setAnimId("walk", pack.walk)
-	setAnimId("run", pack.run)
-	setAnimId("jump", pack.jump)
-	setAnimId("climb", pack.climb)
-	setAnimId("fall", pack.fall)
-
-	-- 重置动画状态以应用更改
-	pcall(function()
-		local humanoid = getHumanoid()
-		if humanoid then
-			humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
-			task.wait(0.1)
-			humanoid:ChangeState(Enum.HumanoidStateType.Running)
-		end
-	end)
-
-	notify("动画包", "已应用 [" .. selectedAnimPack .. "] 动画包", 3)
-end
-
--- 动画包 UI
-local AnimGroup = Tabs_Tools:AddRightGroupbox("动画包")
-
-AnimGroup:AddLabel("选择动画包后点击应用")
-
-local packNames = {}
-for name in pairs(AnimationPacks) do
-	table.insert(packNames, name)
-end
-table.sort(packNames)
-
-AnimationDropdown = AnimGroup:AddDropdown("AnimPackSelect", {
-	Text = "动画包",
-	Values = packNames,
-	Default = "",
-	Multi = false
-})
-
-AnimationDropdown:OnChanged(function(v)
-	selectedAnimPack = v
-end)
-
-AnimGroup:AddButton("应用动画包", function()
-	if selectedAnimPack == "" or not AnimationPacks[selectedAnimPack] then
-		notify("动画", "请选择动画包", 3)
-		return
-	end
-	SetAnimations(AnimationPacks[selectedAnimPack])
-end)
-
--- ============================================================
--- 5. 美化包
+-- 4. 美化包
 -- ============================================================
 local BeautifyGroup = Tabs_Tools:AddRightGroupbox("美化包")
 
@@ -3521,6 +2990,8 @@ ActionGroup:AddButton("播放动画", function()
 end)
 end -- 工具标签页 do...end
 -- UI设置
+Tabs["UI Settings"] = Window:AddTab("UI设置", "settings")
+
 ThemeManager:SetLibrary(Library)
 SaveManager:SetLibrary(Library)
 
