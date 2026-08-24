@@ -20,6 +20,7 @@ local Tabs = {
 -- 公告
 local AnnouncementBox = Tabs.Announcement:AddLeftGroupbox("公告")
 AnnouncementBox:AddLabel("本脚本为缝合脚本")
+AnnouncementBox:AddLabel("作者B站UID: 3706985503525348")
 
 -- 信息功能
 local InfoBox = Tabs.Announcement:AddLeftGroupbox("信息")
@@ -3183,7 +3184,7 @@ end)
 end -- 工具标签页 do...end
 
 -- ============================================
--- XJW飞行 (基于上传飞行源码集成)
+-- XJW飞行 (经典彩色飞行V3 - 提取自源码)
 -- ============================================
 local FlyBox = Tabs.XJWFly:AddLeftGroupbox("飞行控制")
 
@@ -3196,7 +3197,7 @@ local flyState = {
     dis = nil,
 }
 
--- 创建/销毁飞行GUI
+-- 创建/销毁飞行GUI (经典彩色风格)
 local function toggleFlyGui(show)
     pcall(function()
         if flyState.flyGui then flyState.flyGui:Destroy() end
@@ -3214,67 +3215,119 @@ local function toggleFlyGui(show)
 
     local Frame = Instance.new("Frame")
     Frame.Parent = main
-    Frame.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
-    Frame.BorderColor3 = Color3.fromRGB(88, 101, 242)
-    Frame.Position = UDim2.new(0.1, 0, 0.38, 0)
+    Frame.BackgroundColor3 = Color3.fromRGB(163, 255, 137)
+    Frame.BorderColor3 = Color3.fromRGB(103, 221, 213)
+    Frame.Position = UDim2.new(0.100320168, 0, 0.379746825, 0)
     Frame.Size = UDim2.new(0, 190, 0, 57)
 
-    local FrameCorner = Instance.new("UICorner")
-    FrameCorner.CornerRadius = UDim.new(0, 6)
-    FrameCorner.Parent = Frame
+    local up = Instance.new("TextButton")
+    up.Parent = Frame
+    up.BackgroundColor3 = Color3.fromRGB(79, 255, 152)
+    up.Size = UDim2.new(0, 44, 0, 28)
+    up.Font = Enum.Font.SourceSans
+    up.Text = "向上"
+    up.TextColor3 = Color3.fromRGB(0, 0, 0)
+    up.TextSize = 14
 
-    local function mkBtn(text, posX, posY, sizeX, parent)
-        local b = Instance.new("TextButton")
-        b.Parent = parent
-        b.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
-        b.Position = UDim2.new(0, posX, posY, 0)
-        b.Size = UDim2.new(0, sizeX, 0, 28)
-        b.Font = Enum.Font.Gotham
-        b.Text = text
-        b.TextColor3 = Color3.fromRGB(240, 240, 240)
-        b.TextSize = 13
-        local c = Instance.new("UICorner")
-        c.CornerRadius = UDim.new(0, 4)
-        c.Parent = b
-        return b
-    end
+    local down = Instance.new("TextButton")
+    down.Parent = Frame
+    down.BackgroundColor3 = Color3.fromRGB(215, 255, 121)
+    down.Position = UDim2.new(0, 0, 0.491228074, 0)
+    down.Size = UDim2.new(0, 44, 0, 28)
+    down.Font = Enum.Font.SourceSans
+    down.Text = "下降"
+    down.TextColor3 = Color3.fromRGB(0, 0, 0)
+    down.TextSize = 14
 
-    local up = mkBtn("上升", 0, 0, 44, Frame)
-    local down = mkBtn("下降", 0, 0.49, 44, Frame)
-    local onof = mkBtn("飞行", 0.7, 0.49, 56, Frame)
-    local plus = mkBtn("+", 0.23, 0, 45, Frame)
-    local mine = mkBtn("-", 0.23, 0.49, 45, Frame)
-
-    local speedLbl = Instance.new("TextLabel")
-    speedLbl.Parent = Frame
-    speedLbl.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
-    speedLbl.Position = UDim2.new(0.47, 0, 0.49, 0)
-    speedLbl.Size = UDim2.new(0, 44, 0, 28)
-    speedLbl.Font = Enum.Font.Gotham
-    speedLbl.Text = tostring(flyState.speeds)
-    speedLbl.TextColor3 = Color3.fromRGB(88, 101, 242)
-    speedLbl.TextScaled = true
+    local onof = Instance.new("TextButton")
+    onof.Parent = Frame
+    onof.BackgroundColor3 = Color3.fromRGB(255, 249, 74)
+    onof.Position = UDim2.new(0.702823281, 0, 0.491228074, 0)
+    onof.Size = UDim2.new(0, 56, 0, 28)
+    onof.Font = Enum.Font.SourceSans
+    onof.Text = "飞行"
+    onof.TextColor3 = Color3.fromRGB(0, 0, 0)
+    onof.TextSize = 14
 
     local titleLbl = Instance.new("TextLabel")
     titleLbl.Parent = Frame
-    titleLbl.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
-    titleLbl.Position = UDim2.new(0.47, 0, 0, 0)
-    titleLbl.Size = UDim2.new(0, 44, 0, 28)
-    titleLbl.Font = Enum.Font.Gotham
-    titleLbl.Text = "飞行"
-    titleLbl.TextColor3 = Color3.fromRGB(240, 240, 240)
+    titleLbl.BackgroundColor3 = Color3.fromRGB(242, 60, 255)
+    titleLbl.Position = UDim2.new(0.469327301, 0, 0, 0)
+    titleLbl.Size = UDim2.new(0, 100, 0, 28)
+    titleLbl.Font = Enum.Font.SourceSans
+    titleLbl.Text = "XJW飞行"
+    titleLbl.TextColor3 = Color3.fromRGB(0, 0, 0)
     titleLbl.TextScaled = true
+    titleLbl.TextSize = 14
+    titleLbl.TextWrapped = true
 
-    local closebutton = mkBtn("×", 0, -1, 45, Frame)
-    closebutton.TextSize = 24
+    local plus = Instance.new("TextButton")
+    plus.Parent = Frame
+    plus.BackgroundColor3 = Color3.fromRGB(133, 145, 255)
+    plus.Position = UDim2.new(0.231578946, 0, 0, 0)
+    plus.Size = UDim2.new(0, 45, 0, 28)
+    plus.Font = Enum.Font.SourceSans
+    plus.Text = "加速"
+    plus.TextColor3 = Color3.fromRGB(0, 0, 0)
+    plus.TextScaled = true
+    plus.TextSize = 14
+    plus.TextWrapped = true
+
+    local speedLbl = Instance.new("TextLabel")
+    speedLbl.Parent = Frame
+    speedLbl.BackgroundColor3 = Color3.fromRGB(255, 85, 0)
+    speedLbl.Position = UDim2.new(0.468421042, 0, 0.491228074, 0)
+    speedLbl.Size = UDim2.new(0, 44, 0, 28)
+    speedLbl.Font = Enum.Font.SourceSans
+    speedLbl.Text = tostring(flyState.speeds)
+    speedLbl.TextColor3 = Color3.fromRGB(0, 0, 0)
+    speedLbl.TextScaled = true
+    speedLbl.TextSize = 14
+    speedLbl.TextWrapped = true
+
+    local mine = Instance.new("TextButton")
+    mine.Parent = Frame
+    mine.BackgroundColor3 = Color3.fromRGB(123, 255, 247)
+    mine.Position = UDim2.new(0.231578946, 0, 0.491228074, 0)
+    mine.Size = UDim2.new(0, 45, 0, 29)
+    mine.Font = Enum.Font.SourceSans
+    mine.Text = "减速"
+    mine.TextColor3 = Color3.fromRGB(0, 0, 0)
+    mine.TextScaled = true
+    mine.TextSize = 14
+    mine.TextWrapped = true
+
+    local closebutton = Instance.new("TextButton")
+    closebutton.Name = "Close"
+    closebutton.Parent = Frame
+    closebutton.BackgroundColor3 = Color3.fromRGB(225, 25, 0)
+    closebutton.Font = Enum.Font.SourceSans
+    closebutton.Size = UDim2.new(0, 45, 0, 28)
+    closebutton.Text = "X"
+    closebutton.TextColor3 = Color3.fromRGB(0, 0, 0)
+    closebutton.TextSize = 30
     closebutton.Position = UDim2.new(0, 0, -1, 27)
 
-    local mini = mkBtn("-", 44, -1, 45, Frame)
-    mini.TextSize = 30
+    local mini = Instance.new("TextButton")
+    mini.Name = "minimize"
+    mini.Parent = Frame
+    mini.BackgroundColor3 = Color3.fromRGB(192, 150, 230)
+    mini.Font = Enum.Font.SourceSans
+    mini.Size = UDim2.new(0, 45, 0, 28)
+    mini.Text = "-"
+    mini.TextColor3 = Color3.fromRGB(0, 0, 0)
+    mini.TextSize = 40
     mini.Position = UDim2.new(0, 44, -1, 27)
 
-    local mini2 = mkBtn("+", 44, -1, 45, Frame)
-    mini2.TextSize = 30
+    local mini2 = Instance.new("TextButton")
+    mini2.Name = "minimize2"
+    mini2.Parent = Frame
+    mini2.BackgroundColor3 = Color3.fromRGB(192, 150, 230)
+    mini2.Font = Enum.Font.SourceSans
+    mini2.Size = UDim2.new(0, 45, 0, 28)
+    mini2.Text = "+"
+    mini2.TextColor3 = Color3.fromRGB(0, 0, 0)
+    mini2.TextSize = 40
     mini2.Position = UDim2.new(0, 44, -1, 57)
     mini2.Visible = false
 
@@ -3658,7 +3711,7 @@ end)
 local FlyInfoBox = Tabs.XJWFly:AddRightGroupbox("使用说明")
 FlyInfoBox:AddParagraph({
     Title = "飞行操作",
-    Desc = "点击「打开飞行面板」后会出现可拖拽的飞行控制面板。\n\n飞行面板按钮:\n- 飞行: 开启/关闭飞行\n- 上升/下降: 按住按钮上升或下降\n- +/-: 调整行走速度\n\n飞行中可用WASD控制方向，方向跟随相机视角。",
+    Desc = "点击「打开飞行面板」后会出现可拖拽的彩色飞行控制面板。\n\n飞行面板按钮:\n- 飞行: 开启/关闭飞行\n- 向上/下降: 按住按钮上升或下降\n- 加速/减速: 调整行走速度\n- X: 关闭面板 / -: 最小化\n\n飞行中可用WASD控制方向，方向跟随相机视角。",
 })
 
 -- UI设置
