@@ -20,20 +20,6 @@ local AnnouncementBox = Tabs.Announcement:AddLeftGroupbox("公告")
 AnnouncementBox:AddLabel("本脚本为缝合脚本")
 
 -- 主页
-local MainSettingsBox = Tabs.Main:AddLeftGroupbox("脚本区")
-MainSettingsBox:AddButton("ROBv4", function()
-    loadstring(game:HttpGet("https://raw.githubusercontent.com/idrobsc/rob_script/refs/heads/main/rob.v4"))()
-end)
-
-MainSettingsBox:AddButton("AF HUB", function()
-    getgenv().SCRIPT_KEY = ""
-    loadstring(game:HttpGet("https://api.jnkie.com/api/v1/luascripts/public/4e025c3c0ccda1554634165acb8f8ee2c1de5f0f8d7f60e7b396c622d7e6e9b0/download"))()
-end)
-
-MainSettingsBox:AddButton("叶脚本", function()
-    loadstring(game:HttpGet("https://raw.githubusercontent.com/roblox-ye/QQ515966991/refs/heads/main/ROBLOX-CNVIP-XIAOYE.lua"))()
-end)
-
 local FeatureBox = Tabs.Main:AddRightGroupbox("功能")
 FeatureBox:AddButton("恐脚本飞行", function()
     loadstring(game:HttpGet("https://raw.githubusercontent.com/kongbaNB/9178/refs/heads/main/fly.lua"))()
@@ -67,15 +53,6 @@ local function charRefresh()
     end
 end
 charRefresh()
-CharLocalPlayer.CharacterAdded:Connect(function(c)
-    charCharacter = c
-    charHumanoid = c:WaitForChild("Humanoid")
-    charHrp = c:WaitForChild("HumanoidRootPart")
-    task.delay(0.5, function()
-        if CharStates.WalkSpeed.Enabled then applyWalkSpeed() end
-        if CharStates.SuperJump.Enabled then applySuperJump() end
-    end)
-end)
 
 local CharStates = {
     WalkSpeed = {Enabled = false, Value = 100, Default = 16},
@@ -103,36 +80,39 @@ local function applyWalkSpeed()
     end
 end
 
--- 2. 穿墙模式 (记录原始碰撞状态，避免关闭后抖动)
-local noclipConn
-local savedCollisions = {}
-local function enableNoclip()
-    if not charCharacter then return end
-    for _, part in pairs(charCharacter:GetDescendants()) do
-        if part:IsA("BasePart") and part.CanCollide and part.Name ~= "HumanoidRootPart" then
-            part.CanCollide = false
-        end
-    end
-end
+-- 2. 穿墙模式 (Noclip)
+local noclipActive = false
+local noclipConn = nil
+
 local function startNoclip()
-    savedCollisions = {}
-    if not charCharacter then return end
-    for _, part in pairs(charCharacter:GetDescendants()) do
-        if part:IsA("BasePart") and part.Name ~= "HumanoidRootPart" then
-            savedCollisions[part] = part.CanCollide
-        end
-    end
-    if noclipConn then noclipConn:Disconnect() end
-    noclipConn = CharRunService.Stepped:Connect(enableNoclip)
+    noclipActive = true
+    if noclipConn then return end
+    noclipConn = CharRunService.Stepped:Connect(function()
+        if not noclipActive or not charCharacter or not charCharacter.Parent then return end
+        pcall(function()
+            for _, part in pairs(charCharacter:GetDescendants()) do
+                if part:IsA("BasePart") and part.Name ~= "HumanoidRootPart" then
+                    part.CanCollide = false
+                end
+            end
+        end)
+    end)
 end
+
 local function stopNoclip()
-    if noclipConn then noclipConn:Disconnect() noclipConn = nil end
-    for part, orig in pairs(savedCollisions) do
-        if part and part.Parent then
-            part.CanCollide = orig
-        end
+    noclipActive = false
+    if noclipConn then
+        noclipConn:Disconnect()
+        noclipConn = nil
     end
-    savedCollisions = {}
+    if not charCharacter or not charCharacter.Parent then return end
+    pcall(function()
+        for _, part in pairs(charCharacter:GetDescendants()) do
+            if part:IsA("BasePart") and part.Name ~= "HumanoidRootPart" then
+                part.CanCollide = true
+            end
+        end
+    end)
 end
 
 -- 3. 无限跳 (JumpRequest触发连续跳跃)
@@ -173,18 +153,21 @@ end))
 charBind("WallClimb", CharRunService.Heartbeat:Connect(function()
     if not CharStates.WallClimb.Enabled then return end
     if not charCharacter or not charHrp or not charHumanoid then return end
-    local rayParams = RaycastParams.new()
-    rayParams.FilterType = Enum.RaycastFilterType.Blacklist
-    rayParams.FilterDescendantsInstances = {charCharacter}
-    local forward = charHrp.CFrame.LookVector
-    local result = CharWorkspace:Raycast(charHrp.Position, forward * 3, rayParams)
-    if result then
-        local normal = result.Normal
-        if math.abs(normal.Y) < 0.5 then
-            charHumanoid:ChangeState(Enum.HumanoidStateType.Freefall)
-            charHrp.Velocity = Vector3.new(charHrp.Velocity.X, CharStates.WallClimb.Value, charHrp.Velocity.Z)
+    if not charCharacter.Parent then return end
+    pcall(function()
+        local rayParams = RaycastParams.new()
+        rayParams.FilterType = Enum.RaycastFilterType.Blacklist
+        rayParams.FilterDescendantsInstances = {charCharacter}
+        local forward = charHrp.CFrame.LookVector
+        local result = CharWorkspace:Raycast(charHrp.Position, forward * 3, rayParams)
+        if result then
+            local normal = result.Normal
+            if math.abs(normal.Y) < 0.5 then
+                charHumanoid:ChangeState(Enum.HumanoidStateType.Freefall)
+                charHrp.Velocity = Vector3.new(charHrp.Velocity.X, CharStates.WallClimb.Value, charHrp.Velocity.Z)
+            end
         end
-    end
+    end)
 end))
 
 -- 7. 反挂机 (杂项)
@@ -212,6 +195,28 @@ local function stopAntiAfk()
     CharStates.AntiAfk.Enabled = false
     AntiAfkThread = nil
 end
+
+-- 死亡后重新应用所有已开启的功能
+local function reapplyAllStates()
+    charRefresh()
+    if not charCharacter or not charHumanoid then return end
+    if CharStates.WalkSpeed.Enabled then applyWalkSpeed() end
+    if CharStates.SuperJump.Enabled then applySuperJump() end
+    if noclipActive then startNoclip() end
+end
+
+CharLocalPlayer.CharacterAdded:Connect(function(c)
+    charCharacter = c
+    charHumanoid = c:FindFirstChildOfClass("Humanoid")
+    charHrp = c:FindFirstChild("HumanoidRootPart")
+    task.spawn(function()
+        charHumanoid = c:WaitForChild("Humanoid")
+        charHrp = c:WaitForChild("HumanoidRootPart")
+        reapplyAllStates()
+    end)
+    task.delay(1, reapplyAllStates)
+    task.delay(3, reapplyAllStates)
+end)
 
 -- 角色修改 UI
 local CharBox = Tabs.Main:AddLeftGroupbox("角色修改")
@@ -247,6 +252,21 @@ CharBox:AddToggle("Char_WallClimb", { Text = "爬墙模式", Default = false }):
 end)
 CharBox:AddSlider("Char_WallClimbVal", { Text = "爬墙速度", Default = 50, Min = 1, Max = 200, Rounding = 0 }):OnChanged(function(v)
     CharStates.WallClimb.Value = v
+end)
+
+-- 脚本区
+local MainSettingsBox = Tabs.Main:AddLeftGroupbox("脚本区")
+MainSettingsBox:AddButton("ROBv4", function()
+    loadstring(game:HttpGet("https://raw.githubusercontent.com/idrobsc/rob_script/refs/heads/main/rob.v4"))()
+end)
+
+MainSettingsBox:AddButton("AF HUB", function()
+    getgenv().SCRIPT_KEY = ""
+    loadstring(game:HttpGet("https://api.jnkie.com/api/v1/luascripts/public/4e025c3c0ccda1554634165acb8f8ee2c1de5f0f8d7f60e7b396c622d7e6e9b0/download"))()
+end)
+
+MainSettingsBox:AddButton("叶脚本", function()
+    loadstring(game:HttpGet("https://raw.githubusercontent.com/roblox-ye/QQ515966991/refs/heads/main/ROBLOX-CNVIP-XIAOYE.lua"))()
 end)
 
 -- 杂项 UI
