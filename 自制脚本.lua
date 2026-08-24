@@ -14,6 +14,7 @@ local Tabs = {
     Main = Window:AddTab("主页", "user"),
     TP = Window:AddTab("传送和甩飞", "send"),
     Visual = Window:AddTab("视觉", "eye"),
+    XJWFly = Window:AddTab("XJW飞行", "wind"),
 }
 
 -- 公告
@@ -56,8 +57,8 @@ end)
 
 -- 主页
 local FeatureBox = Tabs.Main:AddRightGroupbox("功能")
-FeatureBox:AddButton("恐脚本飞行", function()
-    loadstring(game:HttpGet("https://raw.githubusercontent.com/kongbaNB/9178/refs/heads/main/fly.lua"))()
+FeatureBox:AddButton("XJW飞行", function()
+    Tabs.XJWFly:Show()
 end)
 
 FeatureBox:AddButton("静默甩飞", function()
@@ -3180,6 +3181,486 @@ ActionGroup:AddButton("播放动画", function()
 	end)
 end)
 end -- 工具标签页 do...end
+
+-- ============================================
+-- XJW飞行 (基于上传飞行源码集成)
+-- ============================================
+local FlyBox = Tabs.XJWFly:AddLeftGroupbox("飞行控制")
+
+local flyState = {
+    speeds = 1,
+    nowe = false,
+    tpwalking = false,
+    flyGui = nil,
+    tis = nil,
+    dis = nil,
+}
+
+-- 创建/销毁飞行GUI
+local function toggleFlyGui(show)
+    pcall(function()
+        if flyState.flyGui then flyState.flyGui:Destroy() end
+    end)
+    if not show then flyState.flyGui = nil return end
+
+    local lp = game.Players.LocalPlayer
+    local pg = lp:WaitForChild("PlayerGui")
+
+    local main = Instance.new("ScreenGui")
+    main.Name = "XJWFlyUI"
+    main.Parent = pg
+    main.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+    main.ResetOnSpawn = false
+
+    local Frame = Instance.new("Frame")
+    Frame.Parent = main
+    Frame.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+    Frame.BorderColor3 = Color3.fromRGB(88, 101, 242)
+    Frame.Position = UDim2.new(0.1, 0, 0.38, 0)
+    Frame.Size = UDim2.new(0, 190, 0, 57)
+
+    local FrameCorner = Instance.new("UICorner")
+    FrameCorner.CornerRadius = UDim.new(0, 6)
+    FrameCorner.Parent = Frame
+
+    local function mkBtn(text, posX, posY, sizeX, parent)
+        local b = Instance.new("TextButton")
+        b.Parent = parent
+        b.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
+        b.Position = UDim2.new(0, posX, posY, 0)
+        b.Size = UDim2.new(0, sizeX, 0, 28)
+        b.Font = Enum.Font.Gotham
+        b.Text = text
+        b.TextColor3 = Color3.fromRGB(240, 240, 240)
+        b.TextSize = 13
+        local c = Instance.new("UICorner")
+        c.CornerRadius = UDim.new(0, 4)
+        c.Parent = b
+        return b
+    end
+
+    local up = mkBtn("上升", 0, 0, 44, Frame)
+    local down = mkBtn("下降", 0, 0.49, 44, Frame)
+    local onof = mkBtn("飞行", 0.7, 0.49, 56, Frame)
+    local plus = mkBtn("+", 0.23, 0, 45, Frame)
+    local mine = mkBtn("-", 0.23, 0.49, 45, Frame)
+
+    local speedLbl = Instance.new("TextLabel")
+    speedLbl.Parent = Frame
+    speedLbl.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
+    speedLbl.Position = UDim2.new(0.47, 0, 0.49, 0)
+    speedLbl.Size = UDim2.new(0, 44, 0, 28)
+    speedLbl.Font = Enum.Font.Gotham
+    speedLbl.Text = tostring(flyState.speeds)
+    speedLbl.TextColor3 = Color3.fromRGB(88, 101, 242)
+    speedLbl.TextScaled = true
+
+    local titleLbl = Instance.new("TextLabel")
+    titleLbl.Parent = Frame
+    titleLbl.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
+    titleLbl.Position = UDim2.new(0.47, 0, 0, 0)
+    titleLbl.Size = UDim2.new(0, 44, 0, 28)
+    titleLbl.Font = Enum.Font.Gotham
+    titleLbl.Text = "飞行"
+    titleLbl.TextColor3 = Color3.fromRGB(240, 240, 240)
+    titleLbl.TextScaled = true
+
+    local closebutton = mkBtn("×", 0, -1, 45, Frame)
+    closebutton.TextSize = 24
+    closebutton.Position = UDim2.new(0, 0, -1, 27)
+
+    local mini = mkBtn("-", 44, -1, 45, Frame)
+    mini.TextSize = 30
+    mini.Position = UDim2.new(0, 44, -1, 27)
+
+    local mini2 = mkBtn("+", 44, -1, 45, Frame)
+    mini2.TextSize = 30
+    mini2.Position = UDim2.new(0, 44, -1, 57)
+    mini2.Visible = false
+
+    Frame.Active = true
+    Frame.Draggable = true
+
+    local speaker = game:GetService("Players").LocalPlayer
+
+    -- 飞行开关
+    onof.MouseButton1Down:Connect(function()
+        if flyState.nowe == true then
+            flyState.nowe = false
+            flyState.tpwalking = false
+
+            local chr = speaker.Character
+            local hum = chr and chr:FindFirstChildWhichIsA("Humanoid")
+            if hum then
+                for _, st in pairs(Enum.HumanoidStateType:GetEnumItems()) do
+                    pcall(function() hum:SetStateEnabled(st, true) end)
+                end
+                hum:ChangeState(Enum.HumanoidStateType.RunningNoPhysics)
+            end
+            local anim = chr and chr:FindFirstChild("Animate")
+            if anim then anim.Disabled = false end
+        else
+            flyState.nowe = true
+
+            -- 瞬移行走线程
+            for i = 1, flyState.speeds do
+                task.spawn(function()
+                    local hb = game:GetService("RunService").Heartbeat
+                    flyState.tpwalking = true
+                    local chr = speaker.Character
+                    local hum = chr and chr:FindFirstChildWhichIsA("Humanoid")
+                    while flyState.tpwalking and hb:Wait() and chr and hum and hum.Parent do
+                        if hum.MoveDirection.Magnitude > 0 then
+                            chr:TranslateBy(hum.MoveDirection)
+                        end
+                    end
+                end)
+            end
+
+            local chr = speaker.Character
+            local anim = chr and chr:FindFirstChild("Animate")
+            if anim then anim.Disabled = true end
+            local hum = chr and chr:FindFirstChildOfClass("Humanoid")
+            if hum then
+                for _, t in pairs(hum:GetPlayingAnimationTracks()) do
+                    pcall(function() t:AdjustSpeed(0) end)
+                end
+                for _, st in pairs(Enum.HumanoidStateType:GetEnumItems()) do
+                    pcall(function() hum:SetStateEnabled(st, false) end)
+                end
+                hum:ChangeState(Enum.HumanoidStateType.Swimming)
+            end
+        end
+
+        -- R6 / R15 飞行
+        local rigHum = speaker.Character and speaker.Character:FindFirstChildOfClass("Humanoid")
+        if rigHum and rigHum.RigType == Enum.HumanoidRigType.R6 then
+            local torso = speaker.Character:FindFirstChild("Torso")
+            if not torso then return end
+
+            local bg = Instance.new("BodyGyro", torso)
+            bg.P = 9e4
+            bg.maxTorque = Vector3.new(9e9, 9e9, 9e9)
+            bg.cframe = torso.CFrame
+
+            local bv = Instance.new("BodyVelocity", torso)
+            bv.velocity = Vector3.new(0, 0.1, 0)
+            bv.maxForce = Vector3.new(9e9, 9e9, 9e9)
+
+            if flyState.nowe then
+                rigHum.PlatformStand = true
+            end
+
+            local ctrl = {f = 0, b = 0, l = 0, r = 0}
+            local lastctrl = {f = 0, b = 0, l = 0, r = 0}
+            local maxspeed = 50
+            local speed = 0
+
+            -- 键盘控制
+            local UIS = game:GetService("UserInputService")
+            local keyConn
+            keyConn = UIS.InputBegan:Connect(function(input)
+                if input.KeyCode == Enum.KeyCode.W then ctrl.f = 1 end
+                if input.KeyCode == Enum.KeyCode.S then ctrl.b = -1 end
+                if input.KeyCode == Enum.KeyCode.A then ctrl.l = -1 end
+                if input.KeyCode == Enum.KeyCode.D then ctrl.r = 1 end
+            end)
+            local keyConn2
+            keyConn2 = UIS.InputEnded:Connect(function(input)
+                if input.KeyCode == Enum.KeyCode.W then ctrl.f = 0 end
+                if input.KeyCode == Enum.KeyCode.S then ctrl.b = 0 end
+                if input.KeyCode == Enum.KeyCode.A then ctrl.l = 0 end
+                if input.KeyCode == Enum.KeyCode.D then ctrl.r = 0 end
+            end)
+
+            while flyState.nowe and rigHum and rigHum.Parent and rigHum.Health > 0 do
+                game:GetService("RunService").RenderStepped:Wait()
+
+                if ctrl.l + ctrl.r ~= 0 or ctrl.f + ctrl.b ~= 0 then
+                    speed = speed + 0.5 + (speed / maxspeed)
+                    if speed > maxspeed then speed = maxspeed end
+                elseif speed ~= 0 then
+                    speed = speed - 1
+                    if speed < 0 then speed = 0 end
+                end
+
+                local cam = workspace.CurrentCamera
+                if (ctrl.l + ctrl.r) ~= 0 or (ctrl.f + ctrl.b) ~= 0 then
+                    bv.velocity = ((cam.CoordinateFrame.lookVector * (ctrl.f + ctrl.b)) + ((cam.CoordinateFrame * CFrame.new(ctrl.l + ctrl.r, (ctrl.f + ctrl.b) * 0.2, 0).p) - cam.CoordinateFrame.p)) * speed
+                    lastctrl = {f = ctrl.f, b = ctrl.b, l = ctrl.l, r = ctrl.r}
+                elseif speed ~= 0 then
+                    bv.velocity = ((cam.CoordinateFrame.lookVector * (lastctrl.f + lastctrl.b)) + ((cam.CoordinateFrame * CFrame.new(lastctrl.l + lastctrl.r, (lastctrl.f + lastctrl.b) * 0.2, 0).p) - cam.CoordinateFrame.p)) * speed
+                else
+                    bv.velocity = Vector3.new(0, 0, 0)
+                end
+
+                bg.cframe = cam.CoordinateFrame * CFrame.Angles(-math.rad((ctrl.f + ctrl.b) * 50 * speed / maxspeed), 0, 0)
+            end
+
+            if keyConn then keyConn:Disconnect() end
+            if keyConn2 then keyConn2:Disconnect() end
+            bg:Destroy()
+            bv:Destroy()
+            rigHum.PlatformStand = false
+            local anim2 = speaker.Character and speaker.Character:FindFirstChild("Animate")
+            if anim2 then anim2.Disabled = false end
+            flyState.tpwalking = false
+        else
+            -- R15
+            local UpperTorso = speaker.Character:FindFirstChild("UpperTorso")
+            if not UpperTorso then return end
+
+            local bg = Instance.new("BodyGyro", UpperTorso)
+            bg.P = 9e4
+            bg.maxTorque = Vector3.new(9e9, 9e9, 9e9)
+            bg.cframe = UpperTorso.CFrame
+
+            local bv = Instance.new("BodyVelocity", UpperTorso)
+            bv.velocity = Vector3.new(0, 0.1, 0)
+            bv.maxForce = Vector3.new(9e9, 9e9, 9e9)
+
+            if flyState.nowe then
+                rigHum.PlatformStand = true
+            end
+
+            local ctrl = {f = 0, b = 0, l = 0, r = 0}
+            local lastctrl = {f = 0, b = 0, l = 0, r = 0}
+            local maxspeed = 50
+            local speed = 0
+
+            local UIS = game:GetService("UserInputService")
+            local keyConn = UIS.InputBegan:Connect(function(input)
+                if input.KeyCode == Enum.KeyCode.W then ctrl.f = 1 end
+                if input.KeyCode == Enum.KeyCode.S then ctrl.b = -1 end
+                if input.KeyCode == Enum.KeyCode.A then ctrl.l = -1 end
+                if input.KeyCode == Enum.KeyCode.D then ctrl.r = 1 end
+            end)
+            local keyConn2 = UIS.InputEnded:Connect(function(input)
+                if input.KeyCode == Enum.KeyCode.W then ctrl.f = 0 end
+                if input.KeyCode == Enum.KeyCode.S then ctrl.b = 0 end
+                if input.KeyCode == Enum.KeyCode.A then ctrl.l = 0 end
+                if input.KeyCode == Enum.KeyCode.D then ctrl.r = 0 end
+            end)
+
+            while flyState.nowe and rigHum and rigHum.Parent and rigHum.Health > 0 do
+                wait()
+
+                if ctrl.l + ctrl.r ~= 0 or ctrl.f + ctrl.b ~= 0 then
+                    speed = speed + 0.5 + (speed / maxspeed)
+                    if speed > maxspeed then speed = maxspeed end
+                elseif speed ~= 0 then
+                    speed = speed - 1
+                    if speed < 0 then speed = 0 end
+                end
+
+                local cam = workspace.CurrentCamera
+                if (ctrl.l + ctrl.r) ~= 0 or (ctrl.f + ctrl.b) ~= 0 then
+                    bv.velocity = ((cam.CoordinateFrame.lookVector * (ctrl.f + ctrl.b)) + ((cam.CoordinateFrame * CFrame.new(ctrl.l + ctrl.r, (ctrl.f + ctrl.b) * 0.2, 0).p) - cam.CoordinateFrame.p)) * speed
+                    lastctrl = {f = ctrl.f, b = ctrl.b, l = ctrl.l, r = ctrl.r}
+                elseif speed ~= 0 then
+                    bv.velocity = ((cam.CoordinateFrame.lookVector * (lastctrl.f + lastctrl.b)) + ((cam.CoordinateFrame * CFrame.new(lastctrl.l + lastctrl.r, (lastctrl.f + lastctrl.b) * 0.2, 0).p) - cam.CoordinateFrame.p)) * speed
+                else
+                    bv.velocity = Vector3.new(0, 0, 0)
+                end
+
+                bg.cframe = cam.CoordinateFrame * CFrame.Angles(-math.rad((ctrl.f + ctrl.b) * 50 * speed / maxspeed), 0, 0)
+            end
+
+            if keyConn then keyConn:Disconnect() end
+            if keyConn2 then keyConn2:Disconnect() end
+            bg:Destroy()
+            bv:Destroy()
+            rigHum.PlatformStand = false
+            local anim2 = speaker.Character and speaker.Character:FindFirstChild("Animate")
+            if anim2 then anim2.Disabled = false end
+            flyState.tpwalking = false
+        end
+    end)
+
+    -- 上升按钮
+    up.MouseButton1Down:Connect(function()
+        flyState.tis = up.MouseEnter:Connect(function()
+            while flyState.tis do
+                wait()
+                local hrp = speaker.Character and speaker.Character:FindFirstChild("HumanoidRootPart")
+                if hrp then hrp.CFrame = hrp.CFrame * CFrame.new(0, 1, 0) end
+            end
+        end)
+    end)
+    up.MouseLeave:Connect(function()
+        if flyState.tis then flyState.tis:Disconnect() flyState.tis = nil end
+    end)
+
+    -- 下降按钮
+    down.MouseButton1Down:Connect(function()
+        flyState.dis = down.MouseEnter:Connect(function()
+            while flyState.dis do
+                wait()
+                local hrp = speaker.Character and speaker.Character:FindFirstChild("HumanoidRootPart")
+                if hrp then hrp.CFrame = hrp.CFrame * CFrame.new(0, -1, 0) end
+            end
+        end)
+    end)
+    down.MouseLeave:Connect(function()
+        if flyState.dis then flyState.dis:Disconnect() flyState.dis = nil end
+    end)
+
+    -- 加速
+    plus.MouseButton1Down:Connect(function()
+        flyState.speeds = flyState.speeds + 1
+        speedLbl.Text = tostring(flyState.speeds)
+        if flyState.nowe then
+            flyState.tpwalking = false
+            for i = 1, flyState.speeds do
+                task.spawn(function()
+                    local hb = game:GetService("RunService").Heartbeat
+                    flyState.tpwalking = true
+                    local chr = speaker.Character
+                    local hum = chr and chr:FindFirstChildWhichIsA("Humanoid")
+                    while flyState.tpwalking and hb:Wait() and chr and hum and hum.Parent do
+                        if hum.MoveDirection.Magnitude > 0 then
+                            chr:TranslateBy(hum.MoveDirection)
+                        end
+                    end
+                end)
+            end
+        end
+    end)
+
+    -- 减速
+    mine.MouseButton1Down:Connect(function()
+        if flyState.speeds <= 1 then
+            speedLbl.Text = "最小1"
+            task.wait(1)
+            speedLbl.Text = tostring(flyState.speeds)
+        else
+            flyState.speeds = flyState.speeds - 1
+            speedLbl.Text = tostring(flyState.speeds)
+            if flyState.nowe then
+                flyState.tpwalking = false
+                for i = 1, flyState.speeds do
+                    task.spawn(function()
+                        local hb = game:GetService("RunService").Heartbeat
+                        flyState.tpwalking = true
+                        local chr = speaker.Character
+                        local hum = chr and chr:FindFirstChildWhichIsA("Humanoid")
+                        while flyState.tpwalking and hb:Wait() and chr and hum and hum.Parent do
+                            if hum.MoveDirection.Magnitude > 0 then
+                                chr:TranslateBy(hum.MoveDirection)
+                            end
+                        end
+                    end)
+                end
+            end
+        end
+    end)
+
+    -- 关闭
+    closebutton.MouseButton1Click:Connect(function()
+        flyState.nowe = false
+        flyState.tpwalking = false
+        pcall(function()
+            local chr = speaker.Character
+            local hum = chr and chr:FindFirstChildWhichIsA("Humanoid")
+            if hum then
+                for _, st in pairs(Enum.HumanoidStateType:GetEnumItems()) do
+                    pcall(function() hum:SetStateEnabled(st, true) end)
+                end
+                hum:ChangeState(Enum.HumanoidStateType.RunningNoPhysics)
+                hum.PlatformStand = false
+            end
+            local anim = chr and chr:FindFirstChild("Animate")
+            if anim then anim.Disabled = false end
+        end)
+        main:Destroy()
+        flyState.flyGui = nil
+    end)
+
+    -- 最小化
+    mini.MouseButton1Click:Connect(function()
+        up.Visible = false
+        down.Visible = false
+        onof.Visible = false
+        plus.Visible = false
+        speedLbl.Visible = false
+        mine.Visible = false
+        mini.Visible = false
+        mini2.Visible = true
+        Frame.BackgroundTransparency = 1
+        closebutton.Position = UDim2.new(0, 0, -1, 57)
+    end)
+
+    -- 恢复
+    mini2.MouseButton1Click:Connect(function()
+        up.Visible = true
+        down.Visible = true
+        onof.Visible = true
+        plus.Visible = true
+        speedLbl.Visible = true
+        mine.Visible = true
+        mini.Visible = true
+        mini2.Visible = false
+        Frame.BackgroundTransparency = 0
+        closebutton.Position = UDim2.new(0, 0, -1, 27)
+    end)
+
+    flyState.flyGui = main
+end
+
+-- 角色重生时恢复
+game:GetService("Players").LocalPlayer.CharacterAdded:Connect(function(char)
+    task.wait(0.7)
+    pcall(function()
+        local hum = char:FindFirstChildWhichIsA("Humanoid")
+        if hum then
+            hum.PlatformStand = false
+            for _, st in pairs(Enum.HumanoidStateType:GetEnumItems()) do
+                pcall(function() hum:SetStateEnabled(st, true) end)
+            end
+        end
+        local anim = char:FindFirstChild("Animate")
+        if anim then anim.Disabled = false end
+    end)
+    flyState.nowe = false
+    flyState.tpwalking = false
+end)
+
+FlyBox:AddButton("打开飞行面板", function()
+    toggleFlyGui(true)
+end)
+
+FlyBox:AddButton("关闭飞行面板", function()
+    if flyState.nowe then flyState.nowe = false end
+    flyState.tpwalking = false
+    toggleFlyGui(false)
+end)
+
+FlyBox:AddButton("关闭飞行并重置", function()
+    flyState.nowe = false
+    flyState.tpwalking = false
+    pcall(function()
+        local lp = game.Players.LocalPlayer
+        local chr = lp.Character
+        local hum = chr and chr:FindFirstChildWhichIsA("Humanoid")
+        if hum then
+            hum.PlatformStand = false
+            for _, st in pairs(Enum.HumanoidStateType:GetEnumItems()) do
+                pcall(function() hum:SetStateEnabled(st, true) end)
+            end
+            hum:ChangeState(Enum.HumanoidStateType.RunningNoPhysics)
+        end
+        local anim = chr and chr:FindFirstChild("Animate")
+        if anim then anim.Disabled = false end
+    end)
+    toggleFlyGui(false)
+end)
+
+local FlyInfoBox = Tabs.XJWFly:AddRightGroupbox("使用说明")
+FlyInfoBox:AddParagraph({
+    Title = "飞行操作",
+    Desc = "点击「打开飞行面板」后会出现可拖拽的飞行控制面板。\n\n飞行面板按钮:\n- 飞行: 开启/关闭飞行\n- 上升/下降: 按住按钮上升或下降\n- +/-: 调整行走速度\n\n飞行中可用WASD控制方向，方向跟随相机视角。",
+})
+
 -- UI设置
 Tabs["UI Settings"] = Window:AddTab("UI设置", "settings")
 
