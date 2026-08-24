@@ -9,14 +9,16 @@ local Toggles = Library.Toggles
 local Window = Library:CreateWindow({ Title = "XJW中心", Footer = "1.3", Center = true, AutoShow = true })
 
 local Tabs = {
+    Announcement = Window:AddTab("公告", "megaphone"),
     Main = Window:AddTab("主页", "user"),
     ["UI Settings"] = Window:AddTab("UI设置", "settings"),
 }
 
--- 主页
-local AnnouncementBox = Tabs.Main:AddLeftGroupbox("公告")
+-- 公告
+local AnnouncementBox = Tabs.Announcement:AddLeftGroupbox("公告")
 AnnouncementBox:AddLabel("本脚本为缝合脚本")
 
+-- 主页
 local MainSettingsBox = Tabs.Main:AddLeftGroupbox("脚本区")
 MainSettingsBox:AddButton("ROBv4", function()
     loadstring(game:HttpGet("https://raw.githubusercontent.com/idrobsc/rob_script/refs/heads/main/rob.v4"))()
