@@ -11,6 +11,7 @@ local Window = Library:CreateWindow({ Title = "XJW中心", Footer = "1.3", Cente
 local Tabs = {
     Announcement = Window:AddTab("公告", "megaphone"),
     Main = Window:AddTab("主页", "user"),
+    TP = Window:AddTab("传送和甩飞", "send"),
     Visual = Window:AddTab("视觉", "eye"),
 }
 
@@ -129,7 +130,7 @@ local function refreshPlayerNames()
 end
 
 -- ========== 1. 传送功能 ==========
-local TeleportBox = Tabs.Main:AddRightGroupbox("传送功能")
+local TeleportBox = Tabs.TP:AddRightGroupbox("传送功能")
 local tpTargetName = ""
 local tpDropdown = TeleportBox:AddDropdown("TP2_Target", {
     Text = "选择目标玩家",
@@ -183,7 +184,7 @@ TeleportBox:AddToggle("TP2_LoopSingle", { Text = "循环传送", Default = false
 end)
 
 -- ========== 2. 坐头功能 ==========
-local HeadSitBox = Tabs.Main:AddRightGroupbox("坐头功能")
+local HeadSitBox = Tabs.TP:AddRightGroupbox("坐头功能")
 local sitHeadTargetName = ""
 local sitHeadDropdown = HeadSitBox:AddDropdown("SitHead_Target", {
     Text = "选择目标玩家",
@@ -282,7 +283,7 @@ end)
 HeadSitBox:AddButton("停止坐头", stopHeadSit)
 
 -- ========== 3. 甩飞功能 ==========
-local FlingBox2 = Tabs.Main:AddRightGroupbox("甩飞功能")
+local FlingBox2 = Tabs.TP:AddRightGroupbox("甩飞功能")
 local flingTargetName = ""
 local flingDropdown = FlingBox2:AddDropdown("Fling2_Target", {
     Text = "选择目标玩家",
@@ -457,7 +458,7 @@ FlingBox2:AddButton("停止所有甩飞", function()
 end)
 
 -- ========== 4. 视角监视 ==========
-local MonitorBox2 = Tabs.Main:AddRightGroupbox("视角监视")
+local MonitorBox2 = Tabs.TP:AddRightGroupbox("视角监视")
 local monitorTargetName = ""
 local monitorDropdown = MonitorBox2:AddDropdown("Monitor2_Target", {
     Text = "选择目标玩家",
@@ -520,7 +521,7 @@ end)
 MonitorBox2:AddButton("停止监视", stopMonitor2)
 
 -- ========== 5. 恶搞跟随 (14种模式) ==========
-local FollowBox2 = Tabs.Main:AddRightGroupbox("恶搞跟随")
+local FollowBox2 = Tabs.TP:AddRightGroupbox("恶搞跟随")
 local followTargetName = ""
 local followDropdown = FollowBox2:AddDropdown("Follow2_Target", {
     Text = "选择目标玩家",
@@ -1141,7 +1142,7 @@ end)
 -- ============================================
 
 -- 旋转功能
-local SpinBox = Tabs.Main:AddRightGroupbox("旋转 & 防甩飞")
+local SpinBox = Tabs.Main:AddRightGroupbox("旋转")
 local spinRunning = false
 local spinSpeed = 10
 
@@ -1170,9 +1171,9 @@ SpinBox:AddToggle("Spin_Enabled", { Text = "旋转开关", Default = false }):On
     end
 end)
 
--- 防甩飞
+-- 防甩飞 (移到杂项)
 local antiflingRunning = false
-SpinBox:AddToggle("Antifling_Enabled", { Text = "防甩飞", Default = false }):OnChanged(function(state)
+MiscBox:AddToggle("Antifling_Enabled", { Text = "防甩飞", Default = false }):OnChanged(function(state)
     if state then
         antiflingRunning = true
         task.spawn(function()
@@ -1207,7 +1208,7 @@ SpinBox:AddToggle("Antifling_Enabled", { Text = "防甩飞", Default = false }):
 end)
 
 -- 跟随功能
-local FollowBox = Tabs.Main:AddRightGroupbox("跟随功能")
+local FollowBox = Tabs.TP:AddRightGroupbox("跟随功能")
 local followTarget = nil
 local followForward = 5
 local followSide = 0
@@ -1273,8 +1274,9 @@ FollowBox:AddToggle("Follow_Enabled", { Text = "跟随玩家", Default = false }
     end
 end)
 
+-- 玩家进入通知 (移到杂项)
 local joinNotifyEnabled = false
-FollowBox:AddToggle("JoinNotify_Enabled", { Text = "玩家进入通知", Default = false }):OnChanged(function(state)
+MiscBox:AddToggle("JoinNotify_Enabled", { Text = "玩家进入通知", Default = false }):OnChanged(function(state)
     joinNotifyEnabled = state
 end)
 
