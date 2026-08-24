@@ -2113,81 +2113,187 @@ end)
 
 
 -- ============================================================
--- 2. 踏空行走
+-- 2. 踏空行走 (BS源码版 - loadstring加载)
 -- ============================================================
 local WalkAirBox = Tabs.Main:AddLeftGroupbox("踏空行走")
 
-local walkAirEnabled  = false
-local walkAirPlatform = nil
-local walkAirConn     = nil
-
-local walkAirHeight = 0
-WalkAirBox:AddSlider("WalkAir_Height", {
-    Text = "踏空高度(Y轴)",
-    Default = 0,
-    Min = -500,
-    Max = 500,
-    Rounding = 0,
-}):OnChanged(function(val)
-    walkAirHeight = val
+WalkAirBox:AddButton("踏空行走", function()
+    pcall(function()
+        loadstring(game:HttpGet('https://raw.githubusercontent.com/GhostPlayer352/Test4/main/Float'))()
+    end)
+    Notify("踏空行走", "踏空行走脚本已加载", 3)
 end)
 
-WalkAirBox:AddToggle("WalkAirToggle", {
-    Text    = "踏空平台(自带)",
+local airSwimEnabled = false
+local airSwimConns = {}
+local airSwimBV = nil
+local airSwimBG = nil
+
+WalkAirBox:AddToggle("AirSwimToggle", {
+    Text    = "空中游泳",
     Default = false,
-}):OnChanged(function(v)
-    walkAirEnabled = v
-    if v then
-        -- 创建固定高度平台
-        if walkAirPlatform then walkAirPlatform:Destroy() end
-        local part = Instance.new("Part")
-        part.Name         = "WalkAirPlatform"
-        part.Size         = Vector3.new(50, 1, 50)
-        part.Anchored     = true
-        part.CanCollide   = true
-        part.Transparency = 1
-        part.Material     = Enum.Material.Neon
-        part.Color       = Color3.fromRGB(255, 255, 255)
-        part.Parent       = workspace
-        walkAirPlatform   = part
-        -- 平台跟随玩家XZ位置，但Y固定在指定高度
-        walkAirConn = RunService.Heartbeat:Connect(function()
-            if not walkAirEnabled then return end
-            local _, root = getCharacterRoot()
-            if not root then return end
-            -- 平台跟随玩家水平位置
-            walkAirPlatform.CFrame = CFrame.new(root.Position.X, walkAirHeight - 1, root.Position.Z)
-            -- 只在玩家低于平台高度时托住，不强制传送
-            if root.Position.Y < walkAirHeight + 1 then
-                local vel = root.Velocity
-                root.CFrame = CFrame.new(root.Position.X, walkAirHeight + 3, root.Position.Z)
-                root.Velocity = Vector3.new(vel.X, 0, vel.Z)
+}):OnChanged(function(state)
+    airSwimEnabled = state
+    local speaker = game:GetService("Players").LocalPlayer
+    if state then
+        -- 禁用所有Humanoid状态
+        local char = speaker.Character
+        if not char then return end
+        local hum = char:FindFirstChildOfClass("Humanoid")
+        local root = char:FindFirstChild("HumanoidRootPart")
+        if not hum or not root then return end
+
+        local states = {
+            Enum.HumanoidStateType.Climbing,
+            Enum.HumanoidStateType.FallingDown,
+            Enum.HumanoidStateType.Flying,
+            Enum.HumanoidStateType.Freefall,
+            Enum.HumanoidStateType.GettingUp,
+            Enum.HumanoidStateType.Jumping,
+            Enum.HumanoidStateType.Landed,
+            Enum.HumanoidStateType.Physics,
+            Enum.HumanoidStateType.PlatformStanding,
+            Enum.HumanoidStateType.Ragdoll,
+            Enum.HumanoidStateType.Running,
+            Enum.HumanoidStateType.RunningNoPhysics,
+            Enum.HumanoidStateType.Seated,
+            Enum.HumanoidStateType.StrafingNoPhysics,
+            Enum.HumanoidStateType.Swimming,
+        }
+        for _, s in ipairs(states) do
+            hum:SetStateEnabled(s, false)
+        end
+        hum:ChangeState(Enum.HumanoidStateType.Swimming)
+
+        local swimControl = {
+            enabled = true,
+            speed = 25,
+            moving = { forward = false, backward = false, left = false, right = false, up = false, down = false }
+        }
+
+        airSwimBV = Instance.new("BodyVelocity")
+        airSwimBV.Name = "SwimBodyVelocity"
+        airSwimBV.Parent = root
+        airSwimBV.MaxForce = Vector3.new(4000, 4000, 4000)
+        airSwimBV.Velocity = Vector3.new(0, 0, 0)
+
+        airSwimBG = Instance.new("BodyGyro")
+        airSwimBG.Name = "SwimBodyGyro"
+        airSwimBG.Parent = root
+        airSwimBG.MaxTorque = Vector3.new(2000, 2000, 2000)
+        airSwimBG.D = 500
+        airSwimBG.P = 8000
+
+        local UIS = game:GetService("UserInputService")
+        airSwimConns.inputBegin = UIS.InputBegan:Connect(function(input, processed)
+            if processed then return end
+            if input.KeyCode == Enum.KeyCode.W then swimControl.moving.forward = true
+            elseif input.KeyCode == Enum.KeyCode.S then swimControl.moving.backward = true
+            elseif input.KeyCode == Enum.KeyCode.A then swimControl.moving.left = true
+            elseif input.KeyCode == Enum.KeyCode.D then swimControl.moving.right = true
+            elseif input.KeyCode == Enum.KeyCode.Space then swimControl.moving.up = true
+            elseif input.KeyCode == Enum.KeyCode.LeftControl or input.KeyCode == Enum.KeyCode.LeftShift then swimControl.moving.down = true
             end
         end)
-        Notify("踏空行走", "踏空平台已开启, 高度: " .. walkAirHeight, 3)
+
+        airSwimConns.inputEnd = UIS.InputEnded:Connect(function(input, processed)
+            if processed then return end
+            if input.KeyCode == Enum.KeyCode.W then swimControl.moving.forward = false
+            elseif input.KeyCode == Enum.KeyCode.S then swimControl.moving.backward = false
+            elseif input.KeyCode == Enum.KeyCode.A then swimControl.moving.left = false
+            elseif input.KeyCode == Enum.KeyCode.D then swimControl.moving.right = false
+            elseif input.KeyCode == Enum.KeyCode.Space then swimControl.moving.up = false
+            elseif input.KeyCode == Enum.KeyCode.LeftControl or input.KeyCode == Enum.KeyCode.LeftShift then swimControl.moving.down = false
+            end
+        end)
+
+        airSwimConns.heartbeat = RunService.Heartbeat:Connect(function()
+            if not swimControl.enabled then return end
+            local moveDir = Vector3.new(0, 0, 0)
+            if swimControl.moving.forward then moveDir = moveDir + workspace.CurrentCamera.CFrame.LookVector end
+            if swimControl.moving.backward then moveDir = moveDir - workspace.CurrentCamera.CFrame.LookVector end
+            if swimControl.moving.left then moveDir = moveDir - workspace.CurrentCamera.CFrame.RightVector end
+            if swimControl.moving.right then moveDir = moveDir + workspace.CurrentCamera.CFrame.RightVector end
+            if swimControl.moving.up then moveDir = moveDir + Vector3.new(0, 1, 0) end
+            if swimControl.moving.down then moveDir = moveDir + Vector3.new(0, -1, 0) end
+            if moveDir.Magnitude > 0 then
+                airSwimBV.Velocity = moveDir.Unit * swimControl.speed
+            else
+                airSwimBV.Velocity = Vector3.new(0, 0, 0)
+            end
+            airSwimBG.CFrame = CFrame.new(root.Position, root.Position + workspace.CurrentCamera.CFrame.LookVector)
+        end)
+
+        -- 角色重生后重新设置
+        airSwimConns.charAdded = speaker.CharacterAdded:Connect(function(newChar)
+            task.wait(0.7)
+            local newHum = newChar:FindFirstChildOfClass("Humanoid")
+            if newHum then
+                for _, s in ipairs(states) do
+                    newHum:SetStateEnabled(s, false)
+                end
+                newHum:ChangeState(Enum.HumanoidStateType.Swimming)
+            end
+            if swimControl.enabled then
+                local newRoot = newChar:WaitForChild("HumanoidRootPart")
+                if airSwimBV then airSwimBV:Destroy() end
+                if airSwimBG then airSwimBG:Destroy() end
+                airSwimBV = Instance.new("BodyVelocity")
+                airSwimBV.Name = "SwimBodyVelocity"
+                airSwimBV.Parent = newRoot
+                airSwimBV.MaxForce = Vector3.new(4000, 4000, 4000)
+                airSwimBV.Velocity = Vector3.new(0, 0, 0)
+                airSwimBG = Instance.new("BodyGyro")
+                airSwimBG.Name = "SwimBodyGyro"
+                airSwimBG.Parent = newRoot
+                airSwimBG.MaxTorque = Vector3.new(2000, 2000, 2000)
+                airSwimBG.D = 500
+                airSwimBG.P = 8000
+            end
+        end)
+
+        Notify("空中游泳", "空中游泳已开启 - 可在空中自由移动", 3)
     else
-        if walkAirConn then
-            walkAirConn:Disconnect()
-            walkAirConn = nil
+        -- 恢复所有Humanoid状态
+        local char = speaker.Character
+        if char then
+            local hum = char:FindFirstChildOfClass("Humanoid")
+            if hum then
+                local states = {
+                    Enum.HumanoidStateType.Climbing, Enum.HumanoidStateType.FallingDown,
+                    Enum.HumanoidStateType.Flying, Enum.HumanoidStateType.Freefall,
+                    Enum.HumanoidStateType.GettingUp, Enum.HumanoidStateType.Jumping,
+                    Enum.HumanoidStateType.Landed, Enum.HumanoidStateType.Physics,
+                    Enum.HumanoidStateType.PlatformStanding, Enum.HumanoidStateType.Ragdoll,
+                    Enum.HumanoidStateType.Running, Enum.HumanoidStateType.RunningNoPhysics,
+                    Enum.HumanoidStateType.Seated, Enum.HumanoidStateType.StrafingNoPhysics,
+                    Enum.HumanoidStateType.Swimming,
+                }
+                for _, s in ipairs(states) do
+                    hum:SetStateEnabled(s, true)
+                end
+                hum:ChangeState(Enum.HumanoidStateType.RunningNoPhysics)
+            end
         end
-        if walkAirPlatform then
-            walkAirPlatform:Destroy()
-            walkAirPlatform = nil
+        -- 断开所有连接
+        for name, conn in pairs(airSwimConns) do
+            if typeof(conn) == "RBXScriptConnection" then
+                conn:Disconnect()
+                airSwimConns[name] = nil
+            end
         end
-        Notify("踏空行走", "踏空平台已关闭", 3)
+        if airSwimBV then airSwimBV:Destroy() airSwimBV = nil end
+        if airSwimBG then airSwimBG:Destroy() airSwimBG = nil end
+        Notify("空中游泳", "空中游泳已关闭", 3)
     end
 end)
 
 
 
 -- ============================================================
--- 3. 防虚空
+-- 3. 防虚空 (BS源码版 - PlayerProtection.AntiVoid)
 -- ============================================================
 local AntiVoidBox = Tabs.Main:AddLeftGroupbox("防虚空")
-
-local antiVoidEnabled  = false
-local antiVoidPlatform = nil
-local antiVoidConn     = nil
 
 local antiVoidThreshold = -100
 AntiVoidBox:AddSlider("AntiVoid_Threshold", {
@@ -2200,66 +2306,102 @@ AntiVoidBox:AddSlider("AntiVoid_Threshold", {
     antiVoidThreshold = val
 end)
 
+local bsAntiVoid = {
+    _enabled = false,
+    _loop = nil,
+    _voidY = -100,
+    _platform = nil,
+}
+
+function bsAntiVoid:_createPlatform()
+    if self._platform then
+        self._platform:Destroy()
+    end
+    self._platform = Instance.new("Part")
+    self._platform.Name = "AntiVoidPlatform"
+    self._platform.Size = Vector3.new(50, 2, 50)
+    self._platform.Anchored = true
+    self._platform.CanCollide = true
+    self._platform.Material = Enum.Material.Plastic
+    self._platform.Transparency = 0.9
+    self._platform.BrickColor = BrickColor.new("Institutional white")
+    self._platform.Parent = workspace
+end
+
+function bsAntiVoid:_core()
+    self._voidY = antiVoidThreshold
+    local character = LocalPlayer.Character
+    if not character then return end
+    local rootPart = character:FindFirstChild("HumanoidRootPart")
+    local humanoid = character:FindFirstChildOfClass("Humanoid")
+    if rootPart and humanoid and humanoid.Health > 0 then
+        if rootPart.Position.Y < self._voidY then
+            -- 在玩家下方创建透明平台
+            if not self._platform then
+                self:_createPlatform()
+            end
+            -- 平台放在玩家下方稍低位置
+            self._platform.Position = Vector3.new(
+                rootPart.Position.X,
+                self._voidY - 5,
+                rootPart.Position.Z
+            )
+            -- 同时把角色托上去
+            rootPart.CFrame = CFrame.new(rootPart.Position.X, self._voidY + 3, rootPart.Position.Z)
+            rootPart.Velocity = Vector3.new(0, 0, 0)
+        else
+            -- 玩家在安全高度，移除平台
+            if self._platform then
+                self._platform:Destroy()
+                self._platform = nil
+            end
+        end
+    else
+        -- 角色无效，移除平台
+        if self._platform then
+            self._platform:Destroy()
+            self._platform = nil
+        end
+    end
+end
+
+function bsAntiVoid:enable()
+    self._enabled = true
+    if self._loop then self._loop:Disconnect() end
+    self._loop = RunService.RenderStepped:Connect(function()
+        self:_core()
+    end)
+    -- 角色重生后自动重启
+    LocalPlayer.CharacterAdded:Connect(function(newChar)
+        newChar:WaitForChild("HumanoidRootPart")
+        if self._enabled and not self._loop then
+            self:enable()
+        end
+    end)
+    Notify("防虚空", "防虚空已开启, 触发高度: " .. self._voidY, 3)
+end
+
+function bsAntiVoid:disable()
+    self._enabled = false
+    if self._loop then
+        self._loop:Disconnect()
+        self._loop = nil
+    end
+    if self._platform then
+        self._platform:Destroy()
+        self._platform = nil
+    end
+    Notify("防虚空", "防虚空已关闭", 3)
+end
+
 AntiVoidBox:AddToggle("AntiVoidToggle", {
     Text    = "防虚空掉落",
     Default = false,
-}):OnChanged(function(v)
-    antiVoidEnabled = v
-    if v then
-        local savedPos = nil
-        if antiVoidConn then antiVoidConn:Disconnect() end
-        -- 持续记录安全位置
-        local trackConn = RunService.Heartbeat:Connect(function()
-            if not antiVoidEnabled then return end
-            local char, root = getCharacterRoot()
-            if not root then return end
-            -- 记录高于阈值的安全位置
-            if root.Position.Y > antiVoidThreshold + 10 then
-                savedPos = root.CFrame
-            end
-            -- 检测掉落
-            if root.Position.Y < antiVoidThreshold then
-                -- 生成平台接住角色
-                if not (antiVoidPlatform and antiVoidPlatform.Parent) then
-                    local part = Instance.new("Part")
-                    part.Name         = "AntiVoidPlatform"
-                    part.Size         = Vector3.new(50, 2, 50)
-                    part.Anchored     = true
-                    part.CanCollide   = true
-                    part.Transparency = 1
-                    part.Material     = Enum.Material.Neon
-                    part.Color       = Color3.fromRGB(255, 255, 255)
-                    part.Parent       = workspace
-                    antiVoidPlatform  = part
-                end
-                -- 平台放在阈值高度
-                antiVoidPlatform.CFrame = CFrame.new(root.Position.X, antiVoidThreshold, root.Position.Z)
-                -- 传送回安全位置
-                if savedPos then
-                    root.CFrame = savedPos
-                else
-                    root.CFrame = CFrame.new(root.Position.X, antiVoidThreshold + 5, root.Position.Z)
-                end
-                root.Velocity = Vector3.new(0, 0, 0)
-                local hum = char and char:FindFirstChildOfClass("Humanoid")
-                if hum then
-                    hum:ChangeState(Enum.HumanoidStateType.GettingUp)
-                end
-                Notify("防虚空", "已接住掉落角色", 3)
-            end
-        end)
-        antiVoidConn = trackConn
-        Notify("防虚空", "防虚空已开启, 触发高度: " .. antiVoidThreshold, 3)
+}):OnChanged(function(state)
+    if state then
+        bsAntiVoid:enable()
     else
-        if antiVoidConn then
-            antiVoidConn:Disconnect()
-            antiVoidConn = nil
-        end
-        if antiVoidPlatform then
-            antiVoidPlatform:Destroy()
-            antiVoidPlatform = nil
-        end
-        Notify("防虚空", "防虚空已关闭", 3)
+        bsAntiVoid:disable()
     end
 end)
 
