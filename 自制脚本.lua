@@ -67,6 +67,10 @@ FeatureBox:AddButton("祖国人汉化", function()
     loadstring(game:HttpGet("https://raw.githubusercontent.com/kongbaNB/-/refs/heads/main/祖国人汉化"))()
 end)
 
+FeatureBox:AddButton("无敌少侠飞行r15", function()
+    loadstring(game:HttpGet("https://raw.githubusercontent.com/396abc/Script/refs/heads/main/MobileFly.lua"))()
+end)
+
 -- ============================================
 -- 玩家交互功能 (传送/坐头/甩飞/视角监视/恶搞跟随)
 -- ============================================
@@ -130,7 +134,7 @@ local function refreshPlayerNames()
 end
 
 -- ========== 1. 传送功能 ==========
-local TeleportBox = Tabs.TP:AddRightGroupbox("传送功能")
+local TeleportBox = Tabs.TP:AddLeftGroupbox("传送功能")
 local tpTargetName = ""
 local tpDropdown = TeleportBox:AddDropdown("TP2_Target", {
     Text = "选择目标玩家",
@@ -184,7 +188,7 @@ TeleportBox:AddToggle("TP2_LoopSingle", { Text = "循环传送", Default = false
 end)
 
 -- ========== 2. 坐头功能 ==========
-local HeadSitBox = Tabs.TP:AddRightGroupbox("坐头功能")
+local HeadSitBox = Tabs.TP:AddLeftGroupbox("坐头功能")
 local sitHeadTargetName = ""
 local sitHeadDropdown = HeadSitBox:AddDropdown("SitHead_Target", {
     Text = "选择目标玩家",
@@ -283,7 +287,7 @@ end)
 HeadSitBox:AddButton("停止坐头", stopHeadSit)
 
 -- ========== 3. 甩飞功能 ==========
-local FlingBox2 = Tabs.TP:AddRightGroupbox("甩飞功能")
+local FlingBox2 = Tabs.TP:AddLeftGroupbox("甩飞功能")
 local flingTargetName = ""
 local flingDropdown = FlingBox2:AddDropdown("Fling2_Target", {
     Text = "选择目标玩家",
@@ -1329,11 +1333,7 @@ game.Players.PlayerAdded:Connect(function(player)
 end)
 
 -- 无敌少侠飞行 & 动作脚本
-local ActionBox = Tabs.Main:AddRightGroupbox("飞行 & 动作")
-ActionBox:AddButton("无敌少侠飞行r15", function()
-    loadstring(game:HttpGet("https://raw.githubusercontent.com/396abc/Script/refs/heads/main/MobileFly.lua"))()
-end)
-
+local ActionBox = Tabs.Main:AddRightGroupbox("动作脚本")
 ActionBox:AddButton("动作脚本", function()
     loadstring(game:HttpGet("https://raw.githubusercontent.com/7yd7/Hub/refs/heads/Branch/GUIS/Emotes.lua"))()
 end)
@@ -1985,6 +1985,606 @@ end)
 
 ESPRightBox:AddSlider("ESP_MaxDist", { Text = "最大显示距离", Default = 2000, Min = 500, Max = 5000, Rounding = 0 }):OnChanged(function(Value)
     ESPConfig.ESP_MaxDist = Value
+end)
+
+-- ============================================================
+-- BS ESP 高级功能 (从BS源码提取)
+-- ============================================================
+local BSESPBox = Tabs.Visual:AddLeftGroupbox("BS ESP高级")
+
+getgenv().BSESPConfig = getgenv().BSESPConfig or {
+    ESPEnabled = false,
+    ShowBox = false,
+    Show3DBox = false,
+    ShowHealth = false,
+    ShowName = false,
+    ShowDistance = false,
+    ShowTracer = false,
+    TeamCheck = false,
+    ShowSkeleton = false,
+    ShowRadar = false,
+    ShowPlayerCount = false,
+    ShowWeapon = false,
+    RainbowMode = false,
+    HighlightPlayers = false,
+    TracerColor = Color3.new(1, 0, 0),
+    SkeletonColor = Color3.new(0.2, 0.8, 1),
+    BoxColor = Color3.new(1, 1, 1),
+    Box3DColor = Color3.new(0, 1, 1),
+    HealthBarColor = Color3.new(0, 1, 0),
+    HealthTextColor = Color3.new(1, 1, 1),
+    NameColor = Color3.new(1, 1, 1),
+    DistanceColor = Color3.new(1, 1, 0),
+    WeaponColor = Color3.new(1, 0.5, 0),
+    ArrowColor = Color3.new(1, 0, 0),
+    FOVColor = Color3.new(1, 1, 1),
+    HighlightColor = Color3.new(1, 0, 0),
+    BoxThickness = 1,
+    TracerThickness = 1,
+    SkeletonThickness = 2,
+    FOVRadius = 100,
+    ArrowSize = 15,
+}
+
+local BSPlayers = game:GetService("Players")
+local BSRunService = game:GetService("RunService")
+local BSCamera = workspace.CurrentCamera
+local BSLocalPlayer = BSPlayers.LocalPlayer
+local BSESPComponents = {}
+local BSHighlightInstances = {}
+local BSRadarDrawings = {}
+
+local function getBSRainbowColor(time)
+    local r = math.sin(time * 2) * 0.5 + 0.5
+    local g = math.sin(time * 3) * 0.5 + 0.5
+    local b = math.sin(time * 4) * 0.5 + 0.5
+    return Color3.new(r, g, b)
+end
+
+local function getBSCurrentColor(fixedColor)
+    if getgenv().BSESPConfig.RainbowMode then
+        return getBSRainbowColor(tick())
+    end
+    return fixedColor
+end
+
+local function initBSRadar()
+    local radarFrame = Drawing.new("Square")
+    radarFrame.Visible = false
+    radarFrame.Color = Color3.new(0, 0, 0)
+    radarFrame.Thickness = 2
+    radarFrame.Filled = true
+    radarFrame.Transparency = 0.5
+    radarFrame.Size = Vector2.new(200, 200)
+    local radarBorder = Drawing.new("Square")
+    radarBorder.Visible = false
+    radarBorder.Color = Color3.new(1, 1, 1)
+    radarBorder.Thickness = 2
+    radarBorder.Filled = false
+    radarBorder.Size = Vector2.new(200, 200)
+    local radarCrosshairV = Drawing.new("Line")
+    radarCrosshairV.Visible = false
+    radarCrosshairV.Color = Color3.new(0.5, 0.5, 0.5)
+    radarCrosshairV.Thickness = 1
+    local radarCrosshairH = Drawing.new("Line")
+    radarCrosshairH.Visible = false
+    radarCrosshairH.Color = Color3.new(0.5, 0.5, 0.5)
+    radarCrosshairH.Thickness = 1
+    local localPlayerDot = Drawing.new("Circle")
+    localPlayerDot.Visible = false
+    localPlayerDot.Color = Color3.new(0, 1, 0)
+    localPlayerDot.Radius = 4
+    localPlayerDot.Filled = true
+    BSRadarDrawings = {
+        frame = radarFrame,
+        border = radarBorder,
+        crosshairV = radarCrosshairV,
+        crosshairH = radarCrosshairH,
+        localPlayer = localPlayerDot,
+        players = {}
+    }
+end
+initBSRadar()
+
+local BSplayerCountText = Drawing.new("Text")
+BSplayerCountText.Visible = false
+BSplayerCountText.Size = 20
+BSplayerCountText.Font = Drawing.Fonts.Monospace
+BSplayerCountText.Outline = true
+BSplayerCountText.OutlineColor = Color3.new(0, 0, 0)
+
+local BSfovCircle = Drawing.new("Circle")
+BSfovCircle.Thickness = 2
+BSfovCircle.Filled = false
+BSfovCircle.NumSides = 64
+
+local function updateBSRadar()
+    if not getgenv().BSESPConfig.ShowRadar or not getgenv().BSESPConfig.ESPEnabled then
+        for _, drawing in pairs(BSRadarDrawings) do
+            if typeof(drawing) == "table" and drawing.Visible ~= nil then
+                drawing.Visible = false
+            elseif typeof(drawing) == "table" then
+                for _, d in pairs(drawing) do
+                    if d.Visible ~= nil then d.Visible = false end
+                end
+            end
+        end
+        return
+    end
+    local radarRadius = 100
+    local radarPos = Vector2.new(BSCamera.ViewportSize.X - 220, 20)
+    local center = radarPos + Vector2.new(radarRadius, radarRadius)
+    BSRadarDrawings.frame.Position = radarPos
+    BSRadarDrawings.frame.Visible = true
+    BSRadarDrawings.border.Position = radarPos
+    BSRadarDrawings.border.Visible = true
+    if getgenv().BSESPConfig.RainbowMode then
+        local rainbow = getBSRainbowColor(tick())
+        BSRadarDrawings.frame.Color = rainbow
+        BSRadarDrawings.border.Color = rainbow
+    end
+    BSRadarDrawings.crosshairV.From = Vector2.new(center.X, radarPos.Y)
+    BSRadarDrawings.crosshairV.To = Vector2.new(center.X, radarPos.Y + 200)
+    BSRadarDrawings.crosshairV.Visible = true
+    BSRadarDrawings.crosshairH.From = Vector2.new(radarPos.X, center.Y)
+    BSRadarDrawings.crosshairH.To = Vector2.new(radarPos.X + 200, center.Y)
+    BSRadarDrawings.crosshairH.Visible = true
+    BSRadarDrawings.localPlayer.Position = center
+    BSRadarDrawings.localPlayer.Visible = true
+    if getgenv().BSESPConfig.RainbowMode then
+        BSRadarDrawings.localPlayer.Color = getBSRainbowColor(tick())
+    end
+    for player, dot in pairs(BSRadarDrawings.players) do
+        if not BSPlayers:FindFirstChild(player.Name) or player == BSLocalPlayer then
+            dot:Remove()
+            BSRadarDrawings.players[player] = nil
+        end
+    end
+    if BSLocalPlayer.Character and BSLocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
+        local localPos = BSLocalPlayer.Character.HumanoidRootPart.Position
+        local localRot = BSLocalPlayer.Character.HumanoidRootPart.CFrame.LookVector
+        local localAngle = math.atan2(localRot.X, localRot.Z)
+        for _, player in pairs(BSPlayers:GetPlayers()) do
+            if player ~= BSLocalPlayer and player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
+                local targetPos = player.Character.HumanoidRootPart.Position
+                local relativePos = targetPos - localPos
+                local rotatedX = relativePos.X * math.cos(-localAngle) - relativePos.Z * math.sin(-localAngle)
+                local rotatedZ = relativePos.X * math.sin(-localAngle) + relativePos.Z * math.cos(-localAngle)
+                local radarX = rotatedX * 0.5
+                local radarY = -rotatedZ * 0.5
+                local distance = math.sqrt(radarX^2 + radarY^2)
+                local clipped = false
+                if distance > radarRadius - 5 then
+                    local scale = (radarRadius - 5) / distance
+                    radarX = radarX * scale
+                    radarY = radarY * scale
+                    clipped = true
+                end
+                if not BSRadarDrawings.players[player] then
+                    local dot = Drawing.new("Circle")
+                    dot.Radius = clipped and 2 or 3
+                    dot.Filled = true
+                    dot.Thickness = 1
+                    BSRadarDrawings.players[player] = dot
+                end
+                local dot = BSRadarDrawings.players[player]
+                dot.Position = center + Vector2.new(radarX, radarY)
+                dot.Visible = true
+                if getgenv().BSESPConfig.TeamCheck and player.Team == BSLocalPlayer.Team then
+                    dot.Color = Color3.new(0, 1, 0)
+                    dot.Radius = 3
+                else
+                    dot.Color = getBSCurrentColor(Color3.new(1, 0, 0))
+                    dot.Radius = clipped and 2 or 3
+                end
+            elseif BSRadarDrawings.players[player] then
+                BSRadarDrawings.players[player].Visible = false
+            end
+        end
+    end
+end
+
+local function updateBSHighlights()
+    for player, highlight in pairs(BSHighlightInstances) do
+        if not BSPlayers:FindFirstChild(player.Name) then
+            highlight:Destroy()
+            BSHighlightInstances[player] = nil
+        end
+    end
+    if not getgenv().BSESPConfig.HighlightPlayers or not getgenv().BSESPConfig.ESPEnabled then
+        for _, highlight in pairs(BSHighlightInstances) do
+            highlight:Destroy()
+        end
+        BSHighlightInstances = {}
+        return
+    end
+    for _, player in pairs(BSPlayers:GetPlayers()) do
+        if player ~= BSLocalPlayer and player.Character then
+            local shouldShow = true
+            if getgenv().BSESPConfig.TeamCheck and player.Team == BSLocalPlayer.Team then
+                shouldShow = false
+            end
+            if shouldShow then
+                if not BSHighlightInstances[player] then
+                    local highlight = Instance.new("Highlight")
+                    highlight.FillTransparency = 0.3
+                    highlight.OutlineTransparency = 0
+                    highlight.Parent = player.Character
+                    BSHighlightInstances[player] = highlight
+                end
+                local highlight = BSHighlightInstances[player]
+                local color = getBSCurrentColor(getgenv().BSESPConfig.HighlightColor)
+                highlight.FillColor = color
+                highlight.OutlineColor = color
+                if highlight.Parent ~= player.Character then
+                    highlight.Parent = player.Character
+                end
+            elseif BSHighlightInstances[player] then
+                BSHighlightInstances[player]:Destroy()
+                BSHighlightInstances[player] = nil
+            end
+        end
+    end
+end
+
+local function updateBSGlobalDrawings()
+    if getgenv().BSESPConfig.ESPEnabled and getgenv().BSESPConfig.ShowPlayerCount then
+        BSplayerCountText.Text = "在线玩家: " .. #BSPlayers:GetPlayers()
+        BSplayerCountText.Position = Vector2.new(BSCamera.ViewportSize.X / 2, 10)
+        BSplayerCountText.Visible = true
+        BSplayerCountText.Color = getBSCurrentColor(Color3.new(1, 1, 1))
+    else
+        BSplayerCountText.Visible = false
+    end
+    if getgenv().BSESPConfig.ESPEnabled and getgenv().BSESPConfig.ShowFOV then
+        BSfovCircle.Radius = getgenv().BSESPConfig.FOVRadius
+        BSfovCircle.Position = Vector2.new(BSCamera.ViewportSize.X / 2, BSCamera.ViewportSize.Y / 2)
+        BSfovCircle.Visible = true
+        BSfovCircle.Color = getBSCurrentColor(getgenv().BSESPConfig.FOVColor)
+    else
+        BSfovCircle.Visible = false
+    end
+end
+
+local function createBSESP(player)
+    local box = Drawing.new("Square")
+    box.Visible = false
+    box.Color = getgenv().BSESPConfig.BoxColor
+    box.Thickness = getgenv().BSESPConfig.BoxThickness
+    box.Filled = false
+    local box3D = {}
+    for i = 1, 12 do
+        box3D[i] = Drawing.new("Line")
+        box3D[i].Visible = false
+        box3D[i].Thickness = getgenv().BSESPConfig.BoxThickness
+    end
+    local healthBar = Drawing.new("Square")
+    healthBar.Visible = false
+    healthBar.Filled = true
+    local healthBarBackground = Drawing.new("Square")
+    healthBarBackground.Visible = false
+    healthBarBackground.Color = Color3.new(0, 0, 0)
+    healthBarBackground.Transparency = 0.5
+    healthBarBackground.Filled = true
+    local healthText = Drawing.new("Text")
+    healthText.Visible = false
+    healthText.Color = getgenv().BSESPConfig.HealthTextColor
+    healthText.Size = 14
+    healthText.Font = Drawing.Fonts.Monospace
+    healthText.Outline = true
+    healthText.OutlineColor = Color3.new(0, 0, 0)
+    local nameText = Drawing.new("Text")
+    nameText.Visible = false
+    nameText.Size = 16
+    nameText.Font = Drawing.Fonts.Monospace
+    nameText.Outline = true
+    nameText.OutlineColor = Color3.new(0, 0, 0)
+    local distanceText = Drawing.new("Text")
+    distanceText.Visible = false
+    distanceText.Size = 14
+    distanceText.Font = Drawing.Fonts.Monospace
+    distanceText.Outline = true
+    distanceText.OutlineColor = Color3.new(0, 0, 0)
+    local weaponText = Drawing.new("Text")
+    weaponText.Visible = false
+    weaponText.Size = 14
+    weaponText.Font = Drawing.Fonts.Monospace
+    weaponText.Outline = true
+    weaponText.OutlineColor = Color3.new(0, 0, 0)
+    local tracer = Drawing.new("Line")
+    tracer.Visible = false
+    tracer.Color = getgenv().BSESPConfig.TracerColor
+    tracer.Thickness = getgenv().BSESPConfig.TracerThickness
+    local arrow = Drawing.new("Triangle")
+    arrow.Visible = false
+    arrow.Filled = true
+    arrow.Thickness = 1
+    local skeletonLines = {}
+    for i = 1, 15 do
+        skeletonLines[i] = Drawing.new("Line")
+        skeletonLines[i].Visible = false
+        skeletonLines[i].Color = getgenv().BSESPConfig.SkeletonColor
+        skeletonLines[i].Thickness = getgenv().BSESPConfig.SkeletonThickness
+    end
+    local lastHealth = 100
+    local smoothHealth = 100
+    BSESPComponents[player] = {
+        box = box, box3D = box3D, healthBar = healthBar,
+        healthBarBackground = healthBarBackground, healthText = healthText,
+        nameText = nameText, distanceText = distanceText, weaponText = weaponText,
+        tracer = tracer, arrow = arrow, skeletonLines = skeletonLines,
+    }
+    BSRunService.RenderStepped:Connect(function()
+        if not getgenv().BSESPConfig.ESPEnabled or not player.Character or not player.Character:FindFirstChild("HumanoidRootPart") or not player.Character:FindFirstChild("Humanoid") or player == BSLocalPlayer then
+            box.Visible = false
+            for i = 1, 12 do box3D[i].Visible = false end
+            healthBar.Visible = false
+            healthBarBackground.Visible = false
+            healthText.Visible = false
+            nameText.Visible = false
+            distanceText.Visible = false
+            weaponText.Visible = false
+            tracer.Visible = false
+            arrow.Visible = false
+            for _, line in pairs(skeletonLines) do line.Visible = false end
+            return
+        end
+        if getgenv().BSESPConfig.TeamCheck and player.Team == BSLocalPlayer.Team then
+            box.Visible = false
+            for i = 1, 12 do box3D[i].Visible = false end
+            healthBar.Visible = false
+            healthBarBackground.Visible = false
+            healthText.Visible = false
+            nameText.Visible = false
+            distanceText.Visible = false
+            weaponText.Visible = false
+            tracer.Visible = false
+            arrow.Visible = false
+            for _, line in pairs(skeletonLines) do line.Visible = false end
+            return
+        end
+        local character = player.Character
+        local rootPart = character:FindFirstChild("HumanoidRootPart")
+        local humanoid = character:FindFirstChild("Humanoid")
+        if rootPart and humanoid and humanoid.Health > 0 then
+            local rootPos, onScreen = BSCamera:WorldToViewportPoint(rootPart.Position)
+            local headPos = BSCamera:WorldToViewportPoint(rootPart.Position + Vector3.new(0, 3, 0))
+            local legPos = BSCamera:WorldToViewportPoint(rootPart.Position - Vector3.new(0, 3, 0))
+            local weaponName = "无武器"
+            for _, tool in ipairs(character:GetChildren()) do
+                if tool:IsA("Tool") then weaponName = tool.Name break end
+            end
+            if getgenv().BSESPConfig.ShowBox and onScreen then
+                box.Size = Vector2.new(1000 / rootPos.Z, headPos.Y - legPos.Y)
+                box.Position = Vector2.new(rootPos.X - box.Size.X / 2, rootPos.Y - box.Size.Y / 2)
+                box.Visible = true
+                box.Color = getBSCurrentColor(getgenv().BSESPConfig.BoxColor)
+                box.Thickness = getgenv().BSESPConfig.BoxThickness
+            else
+                box.Visible = false
+            end
+            if getgenv().BSESPConfig.Show3DBox then
+                local size = Vector3.new(4, 6, 2)
+                local cf = rootPart.CFrame
+                local corners = {
+                    cf * CFrame.new(-size.X/2, -size.Y/2, -size.Z/2),
+                    cf * CFrame.new(size.X/2, -size.Y/2, -size.Z/2),
+                    cf * CFrame.new(size.X/2, size.Y/2, -size.Z/2),
+                    cf * CFrame.new(-size.X/2, size.Y/2, -size.Z/2),
+                    cf * CFrame.new(-size.X/2, -size.Y/2, size.Z/2),
+                    cf * CFrame.new(size.X/2, -size.Y/2, size.Z/2),
+                    cf * CFrame.new(size.X/2, size.Y/2, size.Z/2),
+                    cf * CFrame.new(-size.X/2, size.Y/2, size.Z/2)
+                }
+                local screenCorners = {}
+                local allOnScreen = true
+                for i, corner in ipairs(corners) do
+                    local pos, visible = BSCamera:WorldToViewportPoint(corner.Position)
+                    screenCorners[i] = Vector2.new(pos.X, pos.Y)
+                    if not visible then allOnScreen = false end
+                end
+                local color = getBSCurrentColor(getgenv().BSESPConfig.Box3DColor)
+                local lines = {{1,2},{2,3},{3,4},{4,1},{5,6},{6,7},{7,8},{8,5},{1,5},{2,6},{3,7},{4,8}}
+                for i, line in ipairs(lines) do
+                    box3D[i].From = screenCorners[line[1]]
+                    box3D[i].To = screenCorners[line[2]]
+                    box3D[i].Color = color
+                    box3D[i].Thickness = getgenv().BSESPConfig.BoxThickness
+                    box3D[i].Visible = true
+                end
+            else
+                for i = 1, 12 do box3D[i].Visible = false end
+            end
+            if getgenv().BSESPConfig.ShowHealth and onScreen then
+                local healthPercentage = humanoid.Health / humanoid.MaxHealth
+                local barWidth = 50
+                local barHeight = 5
+                local barX = headPos.X - barWidth / 2
+                local barY = headPos.Y - 20
+                healthBarBackground.Size = Vector2.new(barWidth, barHeight)
+                healthBarBackground.Position = Vector2.new(barX, barY)
+                healthBarBackground.Visible = true
+                smoothHealth = smoothHealth + (humanoid.Health - smoothHealth) * 0.1
+                local smoothHealthPercentage = smoothHealth / humanoid.MaxHealth
+                healthBar.Size = Vector2.new(barWidth * smoothHealthPercentage, barHeight)
+                healthBar.Position = Vector2.new(barX, barY)
+                if smoothHealthPercentage >= 0.8 then
+                    healthBar.Color = Color3.new(0, 1, 0)
+                elseif smoothHealthPercentage >= 0.5 then
+                    healthBar.Color = Color3.new(1, 1, 0)
+                elseif smoothHealthPercentage >= 0.2 then
+                    healthBar.Color = Color3.new(1, 0.5, 0)
+                else
+                    healthBar.Color = Color3.new(1, 0, 0)
+                end
+                healthBar.Visible = true
+                healthText.Position = Vector2.new(barX + barWidth + 5, barY - 5)
+                healthText.Text = math.floor(humanoid.Health) .. "/" .. math.floor(humanoid.MaxHealth)
+                healthText.Visible = true
+                healthText.Color = getBSCurrentColor(getgenv().BSESPConfig.HealthTextColor)
+            else
+                healthBar.Visible = false
+                healthBarBackground.Visible = false
+                healthText.Visible = false
+            end
+            if getgenv().BSESPConfig.ShowName and onScreen then
+                nameText.Position = Vector2.new(headPos.X, headPos.Y - 35)
+                nameText.Text = player.Name
+                nameText.Visible = true
+                nameText.Color = getBSCurrentColor(getgenv().BSESPConfig.NameColor)
+                if getgenv().BSESPConfig.ShowDistance then
+                    local distance = (BSLocalPlayer.Character.HumanoidRootPart.Position - rootPart.Position).Magnitude
+                    distanceText.Position = Vector2.new(headPos.X, headPos.Y + 10)
+                    distanceText.Text = math.floor(distance) .. "m"
+                    distanceText.Visible = true
+                    distanceText.Color = getBSCurrentColor(getgenv().BSESPConfig.DistanceColor)
+                else
+                    distanceText.Visible = false
+                end
+                if getgenv().BSESPConfig.ShowWeapon then
+                    weaponText.Position = Vector2.new(headPos.X, headPos.Y - 50)
+                    weaponText.Text = weaponName
+                    weaponText.Visible = true
+                    weaponText.Color = getBSCurrentColor(getgenv().BSESPConfig.WeaponColor)
+                else
+                    weaponText.Visible = false
+                end
+            else
+                nameText.Visible = false
+                distanceText.Visible = false
+                weaponText.Visible = false
+            end
+            if getgenv().BSESPConfig.ShowTracer then
+                local head = character:FindFirstChild("Head")
+                if head then
+                    local hPos, hOnScreen = BSCamera:WorldToViewportPoint(head.Position)
+                    if hOnScreen then
+                        tracer.From = Vector2.new(BSCamera.ViewportSize.X / 2, BSCamera.ViewportSize.Y)
+                        tracer.To = Vector2.new(hPos.X, hPos.Y)
+                        tracer.Visible = true
+                        tracer.Color = getBSCurrentColor(getgenv().BSESPConfig.TracerColor)
+                        tracer.Thickness = getgenv().BSESPConfig.TracerThickness
+                    else
+                        tracer.Visible = false
+                    end
+                else
+                    tracer.Visible = false
+                end
+            else
+                tracer.Visible = false
+            end
+            if getgenv().BSESPConfig.OutOfViewArrows and not onScreen then
+                local direction = (rootPart.Position - BSCamera.CFrame.Position).Unit
+                local dotProduct = BSCamera.CFrame.RightVector:Dot(direction)
+                local crossProduct = BSCamera.CFrame.RightVector:Cross(direction)
+                local screenPosition = Vector2.new(
+                    BSCamera.ViewportSize.X / 2 + dotProduct * BSCamera.ViewportSize.X / 3,
+                    BSCamera.ViewportSize.Y / 2 - crossProduct.Y * BSCamera.ViewportSize.Y / 3
+                )
+                screenPosition = Vector2.new(
+                    math.clamp(screenPosition.X, getgenv().BSESPConfig.ArrowSize, BSCamera.ViewportSize.X - getgenv().BSESPConfig.ArrowSize),
+                    math.clamp(screenPosition.Y, getgenv().BSESPConfig.ArrowSize, BSCamera.ViewportSize.Y - getgenv().BSESPConfig.ArrowSize)
+                )
+                local angle = math.atan2(screenPosition.Y - BSCamera.ViewportSize.Y / 2, screenPosition.X - BSCamera.ViewportSize.X / 2)
+                arrow.PointA = screenPosition
+                arrow.PointB = Vector2.new(screenPosition.X - getgenv().BSESPConfig.ArrowSize * math.cos(angle - 0.5), screenPosition.Y - getgenv().BSESPConfig.ArrowSize * math.sin(angle - 0.5))
+                arrow.PointC = Vector2.new(screenPosition.X - getgenv().BSESPConfig.ArrowSize * math.cos(angle + 0.5), screenPosition.Y - getgenv().BSESPConfig.ArrowSize * math.sin(angle + 0.5))
+                arrow.Color = getBSCurrentColor(getgenv().BSESPConfig.ArrowColor)
+                arrow.Visible = true
+            else
+                arrow.Visible = false
+            end
+            if getgenv().BSESPConfig.ShowSkeleton and onScreen then
+                local head = character:FindFirstChild("Head")
+                local torso = character:FindFirstChild("Torso") or character:FindFirstChild("UpperTorso")
+                local leftArm = character:FindFirstChild("Left Arm") or character:FindFirstChild("LeftUpperArm")
+                local rightArm = character:FindFirstChild("Right Arm") or character:FindFirstChild("RightUpperArm")
+                local leftLeg = character:FindFirstChild("Left Leg") or character:FindFirstChild("LeftUpperLeg")
+                local rightLeg = character:FindFirstChild("Right Leg") or character:FindFirstChild("RightUpperLeg")
+                local skeletonColor = getBSCurrentColor(getgenv().BSESPConfig.SkeletonColor)
+                if head and torso and leftArm and rightArm and leftLeg and rightLeg then
+                    local connections = {
+                        {head, torso}, {torso, leftArm}, {torso, rightArm},
+                        {torso, leftLeg}, {torso, rightLeg}
+                    }
+                    for i, conn in ipairs(connections) do
+                        local pos1 = BSCamera:WorldToViewportPoint(conn[1].Position)
+                        local pos2 = BSCamera:WorldToViewportPoint(conn[2].Position)
+                        skeletonLines[i].From = Vector2.new(pos1.X, pos1.Y)
+                        skeletonLines[i].To = Vector2.new(pos2.X, pos2.Y)
+                        skeletonLines[i].Color = skeletonColor
+                        skeletonLines[i].Visible = true
+                    end
+                    for i = #connections + 1, 15 do
+                        skeletonLines[i].Visible = false
+                    end
+                else
+                    for _, line in pairs(skeletonLines) do line.Visible = false end
+                end
+            else
+                for _, line in pairs(skeletonLines) do line.Visible = false end
+            end
+        end
+    end)
+end
+
+for _, player in pairs(BSPlayers:GetPlayers()) do
+    if player ~= BSLocalPlayer then
+        createBSESP(player)
+    end
+end
+BSPlayers.PlayerAdded:Connect(function(player)
+    createBSESP(player)
+end)
+
+BSRunService.RenderStepped:Connect(updateBSGlobalDrawings)
+BSRunService.RenderStepped:Connect(updateBSRadar)
+BSRunService.RenderStepped:Connect(updateBSHighlights)
+
+-- BS ESP UI 控件
+BSESPBox:AddToggle("BS_ESP_Enabled", { Text = "ESP总开关", Default = false }):OnChanged(function(v)
+    getgenv().BSESPConfig.ESPEnabled = v
+end)
+BSESPBox:AddToggle("BS_ShowBox", { Text = "显示方框", Default = false }):OnChanged(function(v)
+    getgenv().BSESPConfig.ShowBox = v
+end)
+BSESPBox:AddToggle("BS_Show3DBox", { Text = "显示3D方框", Default = false }):OnChanged(function(v)
+    getgenv().BSESPConfig.Show3DBox = v
+end)
+BSESPBox:AddToggle("BS_ShowHealth", { Text = "显示血量", Default = false }):OnChanged(function(v)
+    getgenv().BSESPConfig.ShowHealth = v
+end)
+BSESPBox:AddToggle("BS_ShowName", { Text = "显示名称", Default = false }):OnChanged(function(v)
+    getgenv().BSESPConfig.ShowName = v
+end)
+BSESPBox:AddToggle("BS_ShowDistance", { Text = "显示距离", Default = false }):OnChanged(function(v)
+    getgenv().BSESPConfig.ShowDistance = v
+end)
+BSESPBox:AddToggle("BS_ShowTracer", { Text = "显示射线", Default = false }):OnChanged(function(v)
+    getgenv().BSESPConfig.ShowTracer = v
+end)
+BSESPBox:AddToggle("BS_TeamCheck", { Text = "队伍检查", Default = false }):OnChanged(function(v)
+    getgenv().BSESPConfig.TeamCheck = v
+end)
+
+local BSESPRightBox = Tabs.Visual:AddRightGroupbox("BS ESP其他")
+BSESPRightBox:AddToggle("BS_ShowSkeleton", { Text = "显示骨骼", Default = false }):OnChanged(function(v)
+    getgenv().BSESPConfig.ShowSkeleton = v
+end)
+BSESPRightBox:AddToggle("BS_ShowRadar", { Text = "显示雷达", Default = false }):OnChanged(function(v)
+    getgenv().BSESPConfig.ShowRadar = v
+end)
+BSESPRightBox:AddToggle("BS_ShowPlayerCount", { Text = "显示玩家计数", Default = false }):OnChanged(function(v)
+    getgenv().BSESPConfig.ShowPlayerCount = v
+end)
+BSESPRightBox:AddToggle("BS_ShowWeapon", { Text = "显示武器", Default = false }):OnChanged(function(v)
+    getgenv().BSESPConfig.ShowWeapon = v
+end)
+BSESPRightBox:AddToggle("BS_RainbowMode", { Text = "彩虹色模式", Default = false }):OnChanged(function(v)
+    getgenv().BSESPConfig.RainbowMode = v
+end)
+BSESPRightBox:AddToggle("BS_HighlightPlayers", { Text = "高亮玩家", Default = false }):OnChanged(function(v)
+    getgenv().BSESPConfig.HighlightPlayers = v
 end)
 
 -- ============================================================
