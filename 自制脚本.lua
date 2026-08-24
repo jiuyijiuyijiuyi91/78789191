@@ -105,10 +105,17 @@ end
 
 -- 2. 穿墙模式
 charBind("Noclip", CharRunService.Stepped:Connect(function()
-    if CharStates.Noclip.Enabled and charCharacter then
+    if not charCharacter then return end
+    if CharStates.Noclip.Enabled then
         for _, part in pairs(charCharacter:GetDescendants()) do
             if part:IsA("BasePart") and part.CanCollide then
                 part.CanCollide = false
+            end
+        end
+    else
+        for _, part in pairs(charCharacter:GetDescendants()) do
+            if part:IsA("BasePart") and not part.CanCollide then
+                part.CanCollide = true
             end
         end
     end
