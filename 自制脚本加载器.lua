@@ -1,8 +1,26 @@
--- XJW中心 加载器 (SuzumeUI/WindUI 完整版)
-local WindUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/finendss/VowLibrary/refs/heads/main/WINDUI.lua"))()
+-- XJW中心 加载器 (WindUI)
+-- 加载WindUI库
+local WindUI
+local ok, err = pcall(function()
+    WindUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/finendss/VowLibrary/refs/heads/main/WINDUI.lua"))()
+end)
 
-local Players = game:GetService("Players")
-local RunService = game:GetService("RunService")
+if not ok or not WindUI then
+    -- WindUI加载失败，使用原生通知提示
+    game.StarterGui:SetCore("SendNotification", {
+        Title = "加载失败",
+        Text = "WindUI库加载失败: " .. tostring(err),
+        Duration = 5
+    })
+    -- 降级：直接加载XJW中心
+    game.StarterGui:SetCore("SendNotification", {
+        Title = "XJW中心",
+        Text = "正在直接加载脚本...",
+        Duration = 3
+    })
+    loadstring(game:HttpGet("https://raw.githubusercontent.com/jiuyijiuyijiuyi91/78789191/refs/heads/main/%E8%87%AA%E5%88%B6%E8%84%9A%E6%9C%AC.lua"))()
+    return
+end
 
 local Window = WindUI:CreateWindow({
     Title = "XJW中心",
@@ -14,39 +32,43 @@ local Window = WindUI:CreateWindow({
     HideSearchBar = false,
 })
 
--- 模糊效果
-local blur = Instance.new("BlurEffect")
-blur.Size = 12
-blur.Parent = game:GetService("Lighting")
+-- 模糊效果 (pcall防止不支持)
+pcall(function()
+    local blur = Instance.new("BlurEffect")
+    blur.Size = 12
+    blur.Parent = game:GetService("Lighting")
+end)
 
--- 边框流动效果
-local mainContainer = Window.UIElements and Window.UIElements.Main
-if mainContainer then
-    local stroke = Instance.new("UIStroke")
-    stroke.Thickness = 1.5
-    stroke.Color = Color3.new(1, 1, 1)
-    stroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+-- 边框流动效果 (pcall防止不支持)
+pcall(function()
+    local mainContainer = Window.UIElements and Window.UIElements.Main
+    if mainContainer then
+        local stroke = Instance.new("UIStroke")
+        stroke.Thickness = 1.5
+        stroke.Color = Color3.new(1, 1, 1)
+        stroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
 
-    local gradient = Instance.new("UIGradient")
-    gradient.Color = ColorSequence.new({
-        ColorSequenceKeypoint.new(0, Color3.fromRGB(100, 130, 255)),
-        ColorSequenceKeypoint.new(0.25, Color3.fromRGB(0, 200, 255)),
-        ColorSequenceKeypoint.new(0.5, Color3.fromRGB(100, 130, 255)),
-        ColorSequenceKeypoint.new(0.75, Color3.fromRGB(0, 200, 255)),
-        ColorSequenceKeypoint.new(1, Color3.fromRGB(100, 130, 255)),
-    })
-    gradient.Enabled = true
-    gradient.Parent = stroke
-    stroke.Parent = mainContainer
+        local gradient = Instance.new("UIGradient")
+        gradient.Color = ColorSequence.new({
+            ColorSequenceKeypoint.new(0, Color3.fromRGB(100, 130, 255)),
+            ColorSequenceKeypoint.new(0.25, Color3.fromRGB(0, 200, 255)),
+            ColorSequenceKeypoint.new(0.5, Color3.fromRGB(100, 130, 255)),
+            ColorSequenceKeypoint.new(0.75, Color3.fromRGB(0, 200, 255)),
+            ColorSequenceKeypoint.new(1, Color3.fromRGB(100, 130, 255)),
+        })
+        gradient.Enabled = true
+        gradient.Parent = stroke
+        stroke.Parent = mainContainer
 
-    task.spawn(function()
-        local speed = 8
-        while stroke and stroke.Parent do
-            task.wait()
-            gradient.Rotation = (gradient.Rotation + speed) % 360
-        end
-    end)
-end
+        task.spawn(function()
+            local speed = 8
+            while stroke and stroke.Parent do
+                task.wait()
+                gradient.Rotation = (gradient.Rotation + speed) % 360
+            end
+        end)
+    end
+end)
 
 -- 时间标签 (彩虹色)
 local TimeTag = Window:Tag({
@@ -141,7 +163,7 @@ InfoTab:Section({Title = "关于", TextXAlignment = "Left", TextSize = 17})
 
 InfoTab:Paragraph({
     Title = "XJW中心",
-    Desc = "XJW中心是一个缝合脚本，包含多种功能。\n加载器版本: 1.0\nUI: SuzumeUI/WindUI",
+    Desc = "XJW中心是一个缝合脚本，包含多种功能。\n加载器版本: 1.0",
     ImageSize = 20,
     Buttons = {
         {
