@@ -1,8 +1,22 @@
 local repo = "https://raw.githubusercontent.com/ATLASTEAM01/Obsidian/main/"
 local _startTime = tick()
-local Library = loadstring(game:HttpGet(repo .. "Library.lua"))()
-local ThemeManager = loadstring(game:HttpGet(repo .. "addons/ThemeManager.lua"))()
-local SaveManager = loadstring(game:HttpGet(repo .. "addons/SaveManager.lua"))()
+
+-- 混淆兼容: 缓存全局函数引用, 防止混淆器VM丢失
+local _HttpGet = game.HttpGet
+local _loadstring = loadstring
+local _pcall = pcall
+
+-- 混淆安全加载函数: 用缓存引用调用, 不用方法调用语法
+local function safeLoad(url)
+    local ok, content = _pcall(_HttpGet, game, url)
+    if ok and content and #content > 0 then
+        return _loadstring(content)()
+    end
+end
+
+local Library = safeLoad(repo .. "Library.lua")
+local ThemeManager = safeLoad(repo .. "addons/ThemeManager.lua")
+local SaveManager = safeLoad(repo .. "addons/SaveManager.lua")
 
 local Options = Library.Options
 local Toggles = Library.Toggles
@@ -14,7 +28,6 @@ local Tabs = {
     Main = Window:AddTab("主页", "user"),
     TP = Window:AddTab("传送和甩飞", "send"),
     Visual = Window:AddTab("视觉", "eye"),
-    XJWFly = Window:AddTab("XJW飞行", "wind"),
 }
 
 -- 公告
@@ -59,19 +72,24 @@ end)
 -- 主页
 local FeatureBox = Tabs.Main:AddRightGroupbox("功能")
 FeatureBox:AddButton("XJW飞行", function()
-    Tabs.XJWFly:Show()
+    safeLoad("https://raw.githubusercontent.com/jiuyijiuyijiuyi91/78789191/refs/heads/main/%E8%87%AA%E5%88%B6%E8%84%9A%E6%9C%AC%E9%A3%9E%E8%A1%8C.lua")
 end)
 
 FeatureBox:AddButton("静默甩飞", function()
-    loadstring(game:HttpGet("https://raw.githubusercontent.com/jiuyijiuyijiuyi91/78789191/refs/heads/main/%E9%9D%99%E9%BB%98%E7%94%A9%E9%A3%9E(%E5%BC%80%E6%BA%90).lua"))()
+    safeLoad("https://raw.githubusercontent.com/jiuyijiuyijiuyi91/78789191/refs/heads/main/%E9%9D%99%E9%BB%98%E7%94%A9%E9%A3%9E(%E5%BC%80%E6%BA%90).lua")
 end)
 
 FeatureBox:AddButton("祖国人汉化", function()
-    loadstring(game:HttpGet("https://raw.githubusercontent.com/kongbaNB/-/refs/heads/main/祖国人汉化"))()
+    safeLoad("https://raw.githubusercontent.com/kongbaNB/-/refs/heads/main/%E7%A5%96%E5%9B%BD%E4%BA%BA%E6%B1%89%E5%8C%96")
 end)
 
 FeatureBox:AddButton("无敌少侠飞行r15", function()
-    loadstring(game:HttpGet("https://raw.githubusercontent.com/396abc/Script/refs/heads/main/MobileFly.lua"))()
+    local ok, err = pcall(function()
+        safeLoad("https://raw.githubusercontent.com/396abc/Script/refs/heads/main/MobileFly.lua")
+    end)
+    if not ok then
+        game.StarterGui:SetCore("SendNotification", {Title = "加载失败", Text = tostring(err):sub(1, 100), Duration = 5})
+    end
 end)
 
 -- ============================================
@@ -1158,16 +1176,16 @@ end)
 -- 脚本区
 local MainSettingsBox = Tabs.Main:AddLeftGroupbox("脚本区")
 MainSettingsBox:AddButton("ROBv4", function()
-    loadstring(game:HttpGet("https://raw.githubusercontent.com/idrobsc/rob_script/refs/heads/main/rob.v4"))()
+    safeLoad("https://raw.githubusercontent.com/idrobsc/rob_script/refs/heads/main/rob.v4")
 end)
 
 MainSettingsBox:AddButton("AF HUB", function()
     getgenv().SCRIPT_KEY = ""
-    loadstring(game:HttpGet("https://api.jnkie.com/api/v1/luascripts/public/4e025c3c0ccda1554634165acb8f8ee2c1de5f0f8d7f60e7b396c622d7e6e9b0/download"))()
+    safeLoad("https://api.jnkie.com/api/v1/luascripts/public/4e025c3c0ccda1554634165acb8f8ee2c1de5f0f8d7f60e7b396c622d7e6e9b0/download")
 end)
 
 MainSettingsBox:AddButton("叶脚本", function()
-    loadstring(game:HttpGet("https://raw.githubusercontent.com/roblox-ye/QQ515966991/refs/heads/main/ROBLOX-CNVIP-XIAOYE.lua"))()
+    safeLoad("https://raw.githubusercontent.com/roblox-ye/QQ515966991/refs/heads/main/ROBLOX-CNVIP-XIAOYE.lua")
 end)
 
 -- 杂项 UI
@@ -1371,29 +1389,29 @@ end)
 -- 动作脚本
 local ActionBox = Tabs.Main:AddRightGroupbox("动作脚本")
 ActionBox:AddButton("动作脚本", function()
-    loadstring(game:HttpGet("https://raw.githubusercontent.com/7yd7/Hub/refs/heads/Branch/GUIS/Emotes.lua"))()
+    safeLoad("https://raw.githubusercontent.com/7yd7/Hub/refs/heads/Branch/GUIS/Emotes.lua")
 end)
 
 ActionBox:AddButton("r6动作脚本", function()
-    loadstring(game:HttpGet("https://rawscripts.net/raw/Universal-Script-R6-Animations-Menu-By-Me-19427"))()
+    safeLoad("https://rawscripts.net/raw/Universal-Script-R6-Animations-Menu-By-Me-19427")
 end)
 
 -- IY指令
 local IYBox = Tabs.Main:AddRightGroupbox("IY指令")
 IYBox:AddButton("执行Dex", function()
-    loadstring(game:HttpGet("https://github.com/AZYsGithub/DexPlusPlus/releases/latest/download/out.lua"))()
+    safeLoad("https://github.com/AZYsGithub/DexPlusPlus/releases/latest/download/out.lua")
 end)
 
 IYBox:AddButton("执行rspy", function()
-    loadstring(game:HttpGet("https://raw.githubusercontent.com/infyiff/backup/main/SimpleSpyV3/main.lua"))()
+    safeLoad("https://raw.githubusercontent.com/infyiff/backup/main/SimpleSpyV3/main.lua")
 end)
 
 IYBox:AddButton("执行Cspy", function()
-    loadstring(game:HttpGet("https://gitlab.com/upio/cobalt/-/releases/permalink/latest/downloads/Cobalt.luau"))()
+    safeLoad("https://gitlab.com/upio/cobalt/-/releases/permalink/latest/downloads/Cobalt.luau")
 end)
 
 IYBox:AddButton("执行mdex", function()
-    loadstring(game:HttpGet("https://raw.githubusercontent.com/infyiff/backup/main/dex.lua"))()
+    safeLoad("https://raw.githubusercontent.com/infyiff/backup/main/dex.lua")
 end)
 
 -- ============================================================
@@ -2117,7 +2135,7 @@ end)
 
 FeatureBox:AddButton("踏空行走", function()
     pcall(function()
-        loadstring(game:HttpGet('https://raw.githubusercontent.com/GhostPlayer352/Test4/main/Float'))()
+        safeLoad('https://raw.githubusercontent.com/GhostPlayer352/Test4/main/Float')
     end)
     Notify("踏空行走", "踏空行走脚本已加载", 3)
 end)
@@ -2562,7 +2580,7 @@ local BypassBox = Tabs.Main:AddRightGroupbox("绕过功能")
 
 BypassBox:AddButton("绕过反作弊(Adonis)", function()
     local ok, err = pcall(function()
-        loadstring(game:HttpGet("https://raw.githubusercontent.com/.../adoniscries.lua"))()
+        safeLoad("https://raw.githubusercontent.com/.../adoniscries.lua")
     end)
     if ok then
         Notify("绕过", "绕过反作弊脚本已加载", 3)
@@ -3125,14 +3143,14 @@ local ActionGroup = Tabs_Tools:AddLeftGroupbox("动作功能")
 
 ActionGroup:AddButton("R6动作包", function()
 	pcall(function()
-		loadstring(game:HttpGet("https://raw.githubusercontent.com/GreenNumber42/Roblox-Scripts/main/R6Animations.lua"))()
+		safeLoad("https://raw.githubusercontent.com/GreenNumber42/Roblox-Scripts/main/R6Animations.lua")
 	end)
 	notify("动作", "正在加载R6动作包", 3)
 end)
 
 ActionGroup:AddButton("动作V2", function()
 	pcall(function()
-		loadstring(game:HttpGet("https://raw.githubusercontent.com/GreenNumber42/Roblox-Scripts/main/EmotesV2.lua"))()
+		safeLoad("https://raw.githubusercontent.com/GreenNumber42/Roblox-Scripts/main/EmotesV2.lua")
 	end)
 	notify("动作", "正在加载动作V2", 3)
 end)
@@ -3182,12 +3200,6 @@ ActionGroup:AddButton("播放动画", function()
 	end)
 end)
 end -- 工具标签页 do...end
-
--- XJW飞行 (外部加载)
-local FlyBox = Tabs.XJWFly:AddLeftGroupbox("飞行控制")
-FlyBox:AddButton("加载飞行", function()
-    loadstring(game:HttpGet("https://raw.githubusercontent.com/jiuyijiuyijiuyi91/78789191/refs/heads/main/%E8%87%AA%E5%88%B6%E8%84%9A%E6%9C%AC%E9%A3%9E%E8%A1%8C.lua"))()
-end)
 
 -- UI设置
 Tabs["UI Settings"] = Window:AddTab("UI设置", "settings")
