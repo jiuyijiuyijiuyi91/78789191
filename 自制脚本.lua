@@ -1,18 +1,51 @@
 local repo = "https://raw.githubusercontent.com/ATLASTEAM01/Obsidian/main/"
 local _startTime = tick()
 
--- 混淆兼容: 缓存全局函数引用, 防止混淆器VM丢失
-local _HttpGet = game.HttpGet
-local _loadstring = loadstring
-local _pcall = pcall
+-- ============================================
+-- 混淆兼容: 优先使用加载器注入的安全函数
+-- 加载器在混淆器VM启动前就把真正的HTTP函数注入到了_G
+-- 这样即使混淆器VM包装了全局环境, XJW中心也能正常加载脚本
+-- ============================================
 
--- 混淆安全加载函数: 用缓存引用调用, 不用方法调用语法
-local function safeLoad(url)
-    local ok, content = _pcall(_HttpGet, game, url)
-    if ok and content and #content > 0 then
-        return _loadstring(content)()
+-- 优先使用加载器注入的函数, 其次使用自己缓存的
+local _safeLoad = _G.XJW_safeLoad or (shared and shared.XJW_safeLoad)
+
+if not _safeLoad then
+    -- 没有注入函数时, 自己缓存一份 (防止直接运行没经过加载器)
+    local _HttpGet = game.HttpGet
+    local _loadstring = loadstring
+    local _pcall = pcall
+    local _game = game
+    
+    local _httpRequest = nil
+    pcall(function()
+        _httpRequest = (syn and syn.request) or (http_request) or (request) or nil
+    end)
+    
+    _safeLoad = function(url)
+        local ok, content = _pcall(_HttpGet, _game, url)
+        if not ok or not content or #content == 0 then
+            if _httpRequest then
+                local r1, r2 = _pcall(_httpRequest, {Url = url, Method = "GET"})
+                if r1 and r2 and type(r2) == "table" and r2.Body then
+                    ok, content = true, r2.Body
+                end
+            end
+        end
+        if not ok or not content or #content == 0 then
+            ok, content = _pcall(function()
+                return _game:HttpGet(url)
+            end)
+        end
+        if ok and content and #content > 0 then
+            local fn = _loadstring(content)
+            if fn then return fn() end
+        end
     end
 end
+
+-- safeLoad就是最终的加载函数, 所有按钮都用它
+local safeLoad = _safeLoad
 
 local Library = safeLoad(repo .. "Library.lua")
 local ThemeManager = safeLoad(repo .. "addons/ThemeManager.lua")
