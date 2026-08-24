@@ -112,14 +112,17 @@ charBind("Noclip", CharRunService.Stepped:Connect(function()
                 part.CanCollide = false
             end
         end
-    else
-        for _, part in pairs(charCharacter:GetDescendants()) do
-            if part:IsA("BasePart") and not part.CanCollide then
-                part.CanCollide = true
-            end
-        end
     end
 end))
+
+local function restoreCollision()
+    if not charCharacter then return end
+    for _, part in pairs(charCharacter:GetDescendants()) do
+        if part:IsA("BasePart") and not part.CanCollide then
+            part.CanCollide = true
+        end
+    end
+end
 
 -- 3. 无限跳 (JumpRequest触发连续跳跃)
 charBind("BunnyHop", CharUserInputService.JumpRequest:Connect(function()
@@ -212,6 +215,7 @@ end)
 
 CharBox:AddToggle("Char_Noclip", { Text = "穿墙模式", Default = false }):OnChanged(function(v)
     CharStates.Noclip.Enabled = v
+    if not v then restoreCollision() end
 end)
 
 CharBox:AddToggle("Char_BunnyHop", { Text = "无限跳", Default = false }):OnChanged(function(v)
