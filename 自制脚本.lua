@@ -17,6 +17,7 @@ local Tabs = {
 
 -- 公告
 local AnnouncementBox = Tabs.Announcement:AddLeftGroupbox("公告")
+AnnouncementBox:AddLabel("本脚本为缝合脚本")
 
 -- 信息功能
 local InfoBox = Tabs.Announcement:AddLeftGroupbox("信息")
@@ -2039,7 +2040,7 @@ end
 -- ============================================================
 -- 1. 夜视功能
 -- ============================================================
-local NightVisionBox = MiscBox:AddLeftGroupbox("夜视功能")
+local NightVisionBox = Tabs.Main:AddLeftGroupbox("夜视功能")
 
 local nightVisionEnabled  = false
 local nightVisionConn      = nil
@@ -2096,7 +2097,7 @@ end)
 -- ============================================================
 -- 2. 踏空行走
 -- ============================================================
-local WalkAirBox = MiscBox:AddLeftGroupbox("踏空行走")
+local WalkAirBox = Tabs.Main:AddLeftGroupbox("踏空行走")
 
 local walkAirEnabled  = false
 local walkAirPlatform = nil
@@ -2164,7 +2165,7 @@ end)
 -- ============================================================
 -- 3. 防虚空
 -- ============================================================
-local AntiVoidBox = MiscBox:AddLeftGroupbox("防虚空")
+local AntiVoidBox = Tabs.Main:AddLeftGroupbox("防虚空")
 
 local antiVoidEnabled  = false
 local antiVoidPlatform = nil
@@ -2249,7 +2250,7 @@ end)
 -- ============================================================
 -- 4. 防卡顿优化
 -- ============================================================
-local OptimizeBox = MiscBox:AddLeftGroupbox("防卡顿优化")
+local OptimizeBox = Tabs.Main:AddLeftGroupbox("防卡顿优化")
 
 local optimizeEnabled   = false
 local optimizeOriginal   = {}
@@ -2341,7 +2342,7 @@ end)
 -- ============================================================
 -- 7. 防踢功能
 -- ============================================================
-local AntiKickBox = MiscBox:AddRightGroupbox("防踢功能")
+local AntiKickBox = Tabs.Main:AddRightGroupbox("防踢功能")
 
 local antiKickApplied = false
 
@@ -2399,7 +2400,7 @@ end)
 -- ============================================================
 -- 8. 绕过反作弊
 -- ============================================================
-local BypassBox = MiscBox:AddRightGroupbox("绕过功能")
+local BypassBox = Tabs.Main:AddRightGroupbox("绕过功能")
 
 BypassBox:AddButton("绕过反作弊(Adonis)", function()
     local ok, err = pcall(function()
