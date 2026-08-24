@@ -3,42 +3,32 @@ local _startTime = tick()
 
 -- ============================================
 -- 混淆兼容: 优先使用加载器注入的安全函数
--- 加载器在混淆器VM启动前就把真正的HTTP函数注入到了_G
--- 这样即使混淆器VM包装了全局环境, XJW中心也能正常加载脚本
+-- 加载器把纯净环境的HTTP函数注入到_G, XJW中心直接使用
+-- 如果没有注入(直接运行时), 用字符串编译的方式自己创建
 -- ============================================
 
--- 优先使用加载器注入的函数, 其次使用自己的
+-- 优先使用加载器注入的函数
 local _safeLoad = _G.XJW_safeLoad or (shared and shared.XJW_safeLoad)
 
 if not _safeLoad then
-    -- 没有注入函数时, 自己创建 (直接运行没经过加载器时用)
-    local _pcall = pcall
-    local _loadstring = loadstring
-    
-    -- 优先用request全局函数 (混淆器一般不包装全局函数)
-    local _request = nil
-    _pcall(function()
-        _request = (syn and syn.request) or http_request or request or nil
-    end)
-    
-    _safeLoad = function(url)
-        -- 方式1: request全局函数
-        if _request then
-            local ok, resp = _pcall(_request, {Url = url, Method = "GET"})
-            if ok and resp and type(resp) == "table" and resp.Body and #resp.Body > 0 then
-                local fn = _loadstring(resp.Body)
+    -- 没有注入函数时, 用字符串编译创建 (绕过可能的代理)
+    _safeLoad = loadstring([[
+        return function(url)
+            local req = (syn and syn.request) or http_request or request
+            if req then
+                local ok, resp = pcall(req, {Url = url, Method = "GET"})
+                if ok and resp and type(resp) == "table" and resp.Body and #resp.Body > 0 then
+                    local fn = loadstring(resp.Body)
+                    if fn then return fn() end
+                end
+            end
+            local ok, content = pcall(function() return game:HttpGet(url) end)
+            if ok and content and #content > 0 then
+                local fn = loadstring(content)
                 if fn then return fn() end
             end
         end
-        -- 方式2: game:HttpGet 兜底
-        local ok, content = _pcall(function()
-            return game:HttpGet(url)
-        end)
-        if ok and content and #content > 0 then
-            local fn = _loadstring(content)
-            if fn then return fn() end
-        end
-    end
+    ]])()
 end
 
 -- safeLoad就是最终的加载函数, 所有按钮都用它
