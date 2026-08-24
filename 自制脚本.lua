@@ -1,4 +1,5 @@
 local repo = "https://raw.githubusercontent.com/ATLASTEAM01/Obsidian/main/"
+local _startTime = tick()
 local Library = loadstring(game:HttpGet(repo .. "Library.lua"))()
 local ThemeManager = loadstring(game:HttpGet(repo .. "addons/ThemeManager.lua"))()
 local SaveManager = loadstring(game:HttpGet(repo .. "addons/SaveManager.lua"))()
@@ -2112,12 +2113,7 @@ end)
 
 
 
--- ============================================================
--- 2. 踏空行走 (BS源码版 - loadstring加载)
--- ============================================================
-local WalkAirBox = Tabs.Main:AddLeftGroupbox("踏空行走")
-
-WalkAirBox:AddButton("踏空行走", function()
+FeatureBox:AddButton("踏空行走", function()
     pcall(function()
         loadstring(game:HttpGet('https://raw.githubusercontent.com/GhostPlayer352/Test4/main/Float'))()
     end)
@@ -2129,7 +2125,7 @@ local airSwimConns = {}
 local airSwimBV = nil
 local airSwimBG = nil
 
-WalkAirBox:AddToggle("AirSwimToggle", {
+FeatureBox:AddToggle("AirSwimToggle", {
     Text    = "空中游泳",
     Default = false,
 }):OnChanged(function(state)
@@ -3198,3 +3194,14 @@ SaveManager:BuildConfigSection(Tabs["UI Settings"])
 ThemeManager:ApplyToTab(Tabs["UI Settings"])
 
 SaveManager:LoadAutoloadConfig()
+
+-- 启动成功通知
+local _elapsed = tick() - _startTime
+local _msg = string.format("耗时 %.2f 秒", _elapsed)
+pcall(function()
+    game.StarterGui:SetCore("SendNotification", {
+        Title = "XJW中心加载成功",
+        Text = _msg,
+        Duration = 5,
+    })
+end)
