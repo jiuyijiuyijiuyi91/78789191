@@ -17,7 +17,6 @@ local Tabs = {
 
 -- 公告
 local AnnouncementBox = Tabs.Announcement:AddLeftGroupbox("公告")
-AnnouncementBox:AddLabel("本脚本为缝合脚本")
 
 -- 信息功能
 local InfoBox = Tabs.Announcement:AddLeftGroupbox("信息")
@@ -452,6 +451,39 @@ FlingBox2:AddToggle("Fling2_LoopSingle", { Text = "循环甩飞选定玩家", De
         pNotify("开始", "循环甩飞玩家")
     else
         pNotify("停止", "循环甩飞已停止")
+    end
+end)
+
+FlingBox2:AddButton("甩飞所有玩家", function()
+    local count = 0
+    for _, p in ipairs(PPlayers:GetPlayers()) do
+        if p ~= PLocalPlayer and p.Character then
+            pcall(function() SkidFling2(p) end)
+            count = count + 1
+            task.wait(0.1)
+        end
+    end
+    pNotify("成功", "已甩飞 " .. count .. " 个玩家")
+end)
+
+FlingBox2:AddToggle("Fling2_LoopAll", { Text = "循环甩飞所有玩家", Default = false }):OnChanged(function(v)
+    flingLoops2.all = v
+    if v then
+        local thread = task.spawn(function()
+            while flingLoops2.all do
+                for _, p in ipairs(PPlayers:GetPlayers()) do
+                    if p ~= PLocalPlayer and p.Character then
+                        pcall(function() SkidFling2(p) end)
+                    end
+                    task.wait(0.05)
+                end
+                task.wait(0.1)
+            end
+        end)
+        table.insert(PState.threads, thread)
+        pNotify("开始", "循环甩飞所有玩家")
+    else
+        pNotify("停止", "循环甩飞所有玩家已停止")
     end
 end)
 
@@ -1960,14 +1992,7 @@ BSESPRightBox:AddToggle("BS_HighlightPlayers", { Text = "高亮玩家", Default 
     getgenv().BSESPConfig.HighlightPlayers = v
 end)
 
--- ============================================================
--- Tab: 高级 (Advanced)  —— 适配 Obsidian UI 库
--- 依赖: 外部已创建 Window 对象
--- ============================================================
-do
-local Tabs_Advanced = Window:AddTab("高级", "shield")
-
--- ---------- 服务与公共引用 ----------
+-- ---------- 高级功能 (移至杂项) ----------
 local Players       = game:GetService("Players")
 local RunService    = game:GetService("RunService")
 local Lighting      = game:GetService("Lighting")
@@ -2014,7 +2039,7 @@ end
 -- ============================================================
 -- 1. 夜视功能
 -- ============================================================
-local NightVisionBox = Tabs_Advanced:AddLeftGroupbox("夜视功能")
+local NightVisionBox = MiscBox:AddLeftGroupbox("夜视功能")
 
 local nightVisionEnabled  = false
 local nightVisionConn      = nil
@@ -2043,7 +2068,6 @@ end
 NightVisionBox:AddToggle("NightVisionToggle", {
     Text    = "夜视模式",
     Default = false,
-    Tooltip = "开启时持续保持明亮光照，关闭恢复原值"
 }):OnChanged(function(v)
     nightVisionEnabled = v
     if v then
@@ -2067,46 +2091,61 @@ NightVisionBox:AddToggle("NightVisionToggle", {
     end
 end)
 
-NightVisionBox:AddLabel("说明: 开启后用RunService持续锁定光照参数")
 
 
 -- ============================================================
 -- 2. 踏空行走
 -- ============================================================
-local WalkAirBox = Tabs_Advanced:AddLeftGroupbox("踏空行走")
+local WalkAirBox = MiscBox:AddLeftGroupbox("踏空行走")
 
 local walkAirEnabled  = false
 local walkAirPlatform = nil
 local walkAirConn     = nil
 
+local walkAirHeight = 0
+WalkAirBox:AddSlider("WalkAir_Height", {
+    Text = "踏空高度(Y轴)",
+    Default = 0,
+    Min = -500,
+    Max = 500,
+    Rounding = 0,
+}):OnChanged(function(val)
+    walkAirHeight = val
+end)
+
 WalkAirBox:AddToggle("WalkAirToggle", {
     Text    = "踏空平台(自带)",
     Default = false,
-    Tooltip = "开启时在脚下持续生成透明Anchored平台，关闭时删除"
 }):OnChanged(function(v)
     walkAirEnabled = v
     if v then
-        if walkAirConn then walkAirConn:Disconnect() end
+        -- 创建固定高度平台
+        if walkAirPlatform then walkAirPlatform:Destroy() end
+        local part = Instance.new("Part")
+        part.Name         = "WalkAirPlatform"
+        part.Size         = Vector3.new(50, 1, 50)
+        part.Anchored     = true
+        part.CanCollide   = true
+        part.Transparency = 1
+        part.Material     = Enum.Material.Neon
+        part.Color       = Color3.fromRGB(255, 255, 255)
+        part.Parent       = workspace
+        walkAirPlatform   = part
+        -- 平台跟随玩家XZ位置，但Y固定在指定高度
         walkAirConn = RunService.Heartbeat:Connect(function()
             if not walkAirEnabled then return end
             local _, root = getCharacterRoot()
             if not root then return end
-            if walkAirPlatform and walkAirPlatform.Parent then
-                walkAirPlatform.CFrame = CFrame.new(root.Position.X, root.Position.Y - 3.2, root.Position.Z)
-            else
-                local part = Instance.new("Part")
-                part.Name         = "WalkAirPlatform"
-                part.Size         = Vector3.new(10, 1, 10)
-                part.Anchored     = true
-                part.CanCollide   = true
-                part.Transparency = 1
-                part.Material     = Enum.Material.Neon
-                part.Color       = Color3.fromRGB(255, 255, 255)
-                part.Parent       = workspace
-                walkAirPlatform   = part
+            -- 平台跟随玩家水平位置
+            walkAirPlatform.CFrame = CFrame.new(root.Position.X, walkAirHeight - 1, root.Position.Z)
+            -- 只在玩家低于平台高度时托住，不强制传送
+            if root.Position.Y < walkAirHeight + 1 then
+                local vel = root.Velocity
+                root.CFrame = CFrame.new(root.Position.X, walkAirHeight + 3, root.Position.Z)
+                root.Velocity = Vector3.new(vel.X, 0, vel.Z)
             end
         end)
-        Notify("踏空行走", "踏空平台已开启", 3)
+        Notify("踏空行走", "踏空平台已开启, 高度: " .. walkAirHeight, 3)
     else
         if walkAirConn then
             walkAirConn:Disconnect()
@@ -2120,31 +2159,48 @@ WalkAirBox:AddToggle("WalkAirToggle", {
     end
 end)
 
-WalkAirBox:AddLabel("说明: 开启后脚下会出现透明可踩平台")
 
 
 -- ============================================================
 -- 3. 防虚空
 -- ============================================================
-local AntiVoidBox = Tabs_Advanced:AddLeftGroupbox("防虚空")
+local AntiVoidBox = MiscBox:AddLeftGroupbox("防虚空")
 
 local antiVoidEnabled  = false
 local antiVoidPlatform = nil
 local antiVoidConn     = nil
 
+local antiVoidThreshold = -100
+AntiVoidBox:AddSlider("AntiVoid_Threshold", {
+    Text = "触发高度(Y轴)",
+    Default = -100,
+    Min = -1000,
+    Max = 0,
+    Rounding = 0,
+}):OnChanged(function(val)
+    antiVoidThreshold = val
+end)
+
 AntiVoidBox:AddToggle("AntiVoidToggle", {
     Text    = "防虚空掉落",
     Default = false,
-    Tooltip = "角色Y轴低于-1时在下方生成50x2x50平台接住"
 }):OnChanged(function(v)
     antiVoidEnabled = v
     if v then
+        local savedPos = nil
         if antiVoidConn then antiVoidConn:Disconnect() end
-        antiVoidConn = RunService.Heartbeat:Connect(function()
+        -- 持续记录安全位置
+        local trackConn = RunService.Heartbeat:Connect(function()
             if not antiVoidEnabled then return end
-            local _, root = getCharacterRoot()
+            local char, root = getCharacterRoot()
             if not root then return end
-            if root.Position.Y < -1 then
+            -- 记录高于阈值的安全位置
+            if root.Position.Y > antiVoidThreshold + 10 then
+                savedPos = root.CFrame
+            end
+            -- 检测掉落
+            if root.Position.Y < antiVoidThreshold then
+                -- 生成平台接住角色
                 if not (antiVoidPlatform and antiVoidPlatform.Parent) then
                     local part = Instance.new("Part")
                     part.Name         = "AntiVoidPlatform"
@@ -2157,15 +2213,24 @@ AntiVoidBox:AddToggle("AntiVoidToggle", {
                     part.Parent       = workspace
                     antiVoidPlatform  = part
                 end
-                antiVoidPlatform.CFrame = CFrame.new(root.Position.X, root.Position.Y - 5, root.Position.Z)
-            else
-                if antiVoidPlatform then
-                    antiVoidPlatform:Destroy()
-                    antiVoidPlatform = nil
+                -- 平台放在阈值高度
+                antiVoidPlatform.CFrame = CFrame.new(root.Position.X, antiVoidThreshold, root.Position.Z)
+                -- 传送回安全位置
+                if savedPos then
+                    root.CFrame = savedPos
+                else
+                    root.CFrame = CFrame.new(root.Position.X, antiVoidThreshold + 5, root.Position.Z)
                 end
+                root.Velocity = Vector3.new(0, 0, 0)
+                local hum = char and char:FindFirstChildOfClass("Humanoid")
+                if hum then
+                    hum:ChangeState(Enum.HumanoidStateType.GettingUp)
+                end
+                Notify("防虚空", "已接住掉落角色", 3)
             end
         end)
-        Notify("防虚空", "防虚空已开启", 3)
+        antiVoidConn = trackConn
+        Notify("防虚空", "防虚空已开启, 触发高度: " .. antiVoidThreshold, 3)
     else
         if antiVoidConn then
             antiVoidConn:Disconnect()
@@ -2179,13 +2244,12 @@ AntiVoidBox:AddToggle("AntiVoidToggle", {
     end
 end)
 
-AntiVoidBox:AddLabel("说明: Y轴低于-1时自动生成50x2x50平台")
 
 
 -- ============================================================
 -- 4. 防卡顿优化
 -- ============================================================
-local OptimizeBox = Tabs_Advanced:AddLeftGroupbox("防卡顿优化")
+local OptimizeBox = MiscBox:AddLeftGroupbox("防卡顿优化")
 
 local optimizeEnabled   = false
 local optimizeOriginal   = {}
@@ -2257,7 +2321,6 @@ end
 OptimizeBox:AddToggle("OptimizeToggle", {
     Text    = "性能优化",
     Default = false,
-    Tooltip = "关闭阴影/后处理/粒子，降低模拟半径"
 }):OnChanged(function(v)
     optimizeEnabled = v
     if v then
@@ -2269,7 +2332,6 @@ OptimizeBox:AddToggle("OptimizeToggle", {
     end
 end)
 
-OptimizeBox:AddLabel("说明: 关闭全局阴影/Bloom/ColorCorrection/粒子")
 
 
 -- ############################################################
@@ -2279,7 +2341,7 @@ OptimizeBox:AddLabel("说明: 关闭全局阴影/Bloom/ColorCorrection/粒子")
 -- ============================================================
 -- 7. 防踢功能
 -- ============================================================
-local AntiKickBox = Tabs_Advanced:AddRightGroupbox("防踢功能")
+local AntiKickBox = MiscBox:AddRightGroupbox("防踢功能")
 
 local antiKickApplied = false
 
@@ -2332,13 +2394,12 @@ AntiKickBox:AddButton("启用防踢", function()
     setupAntiKick()
 end)
 
-AntiKickBox:AddLabel("说明: hookmetamethod + hookfunction 双重拦截")
 
 
 -- ============================================================
 -- 8. 绕过反作弊
 -- ============================================================
-local BypassBox = Tabs_Advanced:AddRightGroupbox("绕过功能")
+local BypassBox = MiscBox:AddRightGroupbox("绕过功能")
 
 BypassBox:AddButton("绕过反作弊(Adonis)", function()
     local ok, err = pcall(function()
@@ -2400,8 +2461,6 @@ BypassBox:AddButton("绕过移动检测", function()
     Notify("绕过", string.format("移动检测已绕过(清理%d项)，WalkSpeed保护已开启", cleared), 4)
 end)
 
-BypassBox:AddLabel("说明: 清理移动检测函数 + WalkSpeed保护")
-end -- 高级标签页 do...end
 -- ============================================================
 -- 工具 Tab
 -- ============================================================
