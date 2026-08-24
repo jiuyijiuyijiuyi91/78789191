@@ -1394,6 +1394,7 @@ IYBox:AddButton("执行mdex", function()
 end)
 
 -- ============================================================
+pcall(function()
 -- BS ESP 高级功能 (从BS源码提取)
 -- ============================================================
 local BSESPBox = Tabs.Visual:AddLeftGroupbox("ESP设置")
@@ -1490,19 +1491,30 @@ local function initBSRadar()
         players = {}
     }
 end
-initBSRadar()
+pcall(function() initBSRadar() end)
 
-local BSplayerCountText = Drawing.new("Text")
+local BSplayerCountText
+pcall(function() BSplayerCountText = Drawing.new("Text") end)
+if BSplayerCountText then
+    BSplayerCountText.Visible = false
+    BSplayerCountText.Size = 20
+    BSplayerCountText.Font = Drawing.Fonts.Monospace
+    BSplayerCountText.Outline = true
+    BSplayerCountText.OutlineColor = Color3.new(0, 0, 0)
+end
 BSplayerCountText.Visible = false
 BSplayerCountText.Size = 20
 BSplayerCountText.Font = Drawing.Fonts.Monospace
 BSplayerCountText.Outline = true
 BSplayerCountText.OutlineColor = Color3.new(0, 0, 0)
 
-local BSfovCircle = Drawing.new("Circle")
-BSfovCircle.Thickness = 2
-BSfovCircle.Filled = false
-BSfovCircle.NumSides = 64
+local BSfovCircle
+pcall(function()
+    BSfovCircle = Drawing.new("Circle")
+    BSfovCircle.Thickness = 2
+    BSfovCircle.Filled = false
+    BSfovCircle.NumSides = 64
+end)
 
 local function updateBSRadar()
     if not getgenv().BSESPConfig.ShowRadar or not getgenv().BSESPConfig.ESPEnabled then
@@ -1653,7 +1665,9 @@ local function updateBSGlobalDrawings()
 end
 
 local function createBSESP(player)
-    local box = Drawing.new("Square")
+    local box
+    if not Drawing then return end
+    box = Drawing.new("Square")
     box.Visible = false
     box.Color = getgenv().BSESPConfig.BoxColor
     box.Thickness = getgenv().BSESPConfig.BoxThickness
@@ -1943,9 +1957,12 @@ BSPlayers.PlayerAdded:Connect(function(player)
     createBSESP(player)
 end)
 
-BSRunService.RenderStepped:Connect(updateBSGlobalDrawings)
-BSRunService.RenderStepped:Connect(updateBSRadar)
-BSRunService.RenderStepped:Connect(updateBSHighlights)
+-- 使用pcall包裹防止Drawing API不支持导致脚本中断
+pcall(function()
+    BSRunService.RenderStepped:Connect(updateBSGlobalDrawings)
+    BSRunService.RenderStepped:Connect(updateBSRadar)
+    BSRunService.RenderStepped:Connect(updateBSHighlights)
+end)
 
 -- BS ESP UI 控件
 BSESPBox:AddToggle("BS_ESP_Enabled", { Text = "ESP总开关", Default = false }):OnChanged(function(v)
@@ -1991,6 +2008,7 @@ BSESPRightBox:AddToggle("BS_RainbowMode", { Text = "彩虹色模式", Default = 
 end)
 BSESPRightBox:AddToggle("BS_HighlightPlayers", { Text = "高亮玩家", Default = false }):OnChanged(function(v)
     getgenv().BSESPConfig.HighlightPlayers = v
+end)
 end)
 
 -- ---------- 高级功能 (移至杂项) ----------
