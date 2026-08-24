@@ -7,36 +7,33 @@ local _startTime = tick()
 -- 这样即使混淆器VM包装了全局环境, XJW中心也能正常加载脚本
 -- ============================================
 
--- 优先使用加载器注入的函数, 其次使用自己缓存的
+-- 优先使用加载器注入的函数, 其次使用自己的
 local _safeLoad = _G.XJW_safeLoad or (shared and shared.XJW_safeLoad)
 
 if not _safeLoad then
-    -- 没有注入函数时, 自己缓存一份 (防止直接运行没经过加载器)
-    local _HttpGet = game.HttpGet
-    local _loadstring = loadstring
+    -- 没有注入函数时, 自己创建 (直接运行没经过加载器时用)
     local _pcall = pcall
-    local _game = game
+    local _loadstring = loadstring
     
-    local _httpRequest = nil
-    pcall(function()
-        _httpRequest = (syn and syn.request) or (http_request) or (request) or nil
+    -- 优先用request全局函数 (混淆器一般不包装全局函数)
+    local _request = nil
+    _pcall(function()
+        _request = (syn and syn.request) or http_request or request or nil
     end)
     
     _safeLoad = function(url)
-        local ok, content = _pcall(_HttpGet, _game, url)
-        if not ok or not content or #content == 0 then
-            if _httpRequest then
-                local r1, r2 = _pcall(_httpRequest, {Url = url, Method = "GET"})
-                if r1 and r2 and type(r2) == "table" and r2.Body then
-                    ok, content = true, r2.Body
-                end
+        -- 方式1: request全局函数
+        if _request then
+            local ok, resp = _pcall(_request, {Url = url, Method = "GET"})
+            if ok and resp and type(resp) == "table" and resp.Body and #resp.Body > 0 then
+                local fn = _loadstring(resp.Body)
+                if fn then return fn() end
             end
         end
-        if not ok or not content or #content == 0 then
-            ok, content = _pcall(function()
-                return _game:HttpGet(url)
-            end)
-        end
+        -- 方式2: game:HttpGet 兜底
+        local ok, content = _pcall(function()
+            return game:HttpGet(url)
+        end)
         if ok and content and #content > 0 then
             local fn = _loadstring(content)
             if fn then return fn() end
