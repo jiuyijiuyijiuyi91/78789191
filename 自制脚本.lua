@@ -103,25 +103,36 @@ local function applyWalkSpeed()
     end
 end
 
--- 2. 穿墙模式
-charBind("Noclip", CharRunService.Stepped:Connect(function()
-    if not charCharacter then return end
-    if CharStates.Noclip.Enabled then
-        for _, part in pairs(charCharacter:GetDescendants()) do
-            if part:IsA("BasePart") and part.CanCollide then
-                part.CanCollide = false
-            end
-        end
-    end
-end))
-
-local function restoreCollision()
+-- 2. 穿墙模式 (记录原始碰撞状态，避免关闭后抖动)
+local noclipConn
+local savedCollisions = {}
+local function enableNoclip()
     if not charCharacter then return end
     for _, part in pairs(charCharacter:GetDescendants()) do
-        if part:IsA("BasePart") and not part.CanCollide then
-            part.CanCollide = true
+        if part:IsA("BasePart") and part.CanCollide and part.Name ~= "HumanoidRootPart" then
+            part.CanCollide = false
         end
     end
+end
+local function startNoclip()
+    savedCollisions = {}
+    if not charCharacter then return end
+    for _, part in pairs(charCharacter:GetDescendants()) do
+        if part:IsA("BasePart") and part.Name ~= "HumanoidRootPart" then
+            savedCollisions[part] = part.CanCollide
+        end
+    end
+    if noclipConn then noclipConn:Disconnect() end
+    noclipConn = CharRunService.Stepped:Connect(enableNoclip)
+end
+local function stopNoclip()
+    if noclipConn then noclipConn:Disconnect() noclipConn = nil end
+    for part, orig in pairs(savedCollisions) do
+        if part and part.Parent then
+            part.CanCollide = orig
+        end
+    end
+    savedCollisions = {}
 end
 
 -- 3. 无限跳 (JumpRequest触发连续跳跃)
@@ -215,7 +226,7 @@ end)
 
 CharBox:AddToggle("Char_Noclip", { Text = "穿墙模式", Default = false }):OnChanged(function(v)
     CharStates.Noclip.Enabled = v
-    if not v then restoreCollision() end
+    if v then startNoclip() else stopNoclip() end
 end)
 
 CharBox:AddToggle("Char_BunnyHop", { Text = "无限跳", Default = false }):OnChanged(function(v)
