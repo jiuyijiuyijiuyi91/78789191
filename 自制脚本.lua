@@ -1,38 +1,16 @@
 local repo = "https://raw.githubusercontent.com/ATLASTEAM01/Obsidian/main/"
 local _startTime = tick()
 
--- ============================================
--- 混淆兼容: 优先使用加载器注入的安全函数
--- 加载器把纯净环境的HTTP函数注入到_G, XJW中心直接使用
--- 如果没有注入(直接运行时), 用字符串编译的方式自己创建
--- ============================================
-
--- 优先使用加载器注入的函数
-local _safeLoad = _G.XJW_safeLoad or (shared and shared.XJW_safeLoad)
-
-if not _safeLoad then
-    -- 没有注入函数时, 用字符串编译创建 (绕过可能的代理)
-    _safeLoad = loadstring([[
-        return function(url)
-            local req = (syn and syn.request) or http_request or request
-            if req then
-                local ok, resp = pcall(req, {Url = url, Method = "GET"})
-                if ok and resp and type(resp) == "table" and resp.Body and #resp.Body > 0 then
-                    local fn = loadstring(resp.Body)
-                    if fn then return fn() end
-                end
-            end
-            local ok, content = pcall(function() return game:HttpGet(url) end)
-            if ok and content and #content > 0 then
-                local fn = loadstring(content)
-                if fn then return fn() end
-            end
-        end
-    ]])()
+-- 安全加载函数
+local function safeLoad(url)
+    local ok, content = pcall(function()
+        return game:HttpGet(url)
+    end)
+    if ok and content and #content > 0 then
+        local fn = loadstring(content)
+        if fn then fn() end
+    end
 end
-
--- safeLoad就是最终的加载函数, 所有按钮都用它
-local safeLoad = _safeLoad
 
 local Library = safeLoad(repo .. "Library.lua")
 local ThemeManager = safeLoad(repo .. "addons/ThemeManager.lua")
