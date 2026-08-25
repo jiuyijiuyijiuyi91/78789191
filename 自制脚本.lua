@@ -1,5 +1,6 @@
 local repo = "https://raw.githubusercontent.com/ATLASTEAM01/Obsidian/main/"
 local _startTime = tick()
+local _lastUpdate = "2026年8月25日" -- 脚本最后更新时间（每次更新功能后手动修改）
 
 -- 安全加载函数
 local function safeLoad(url)
@@ -33,6 +34,7 @@ local AnnouncementBox = Tabs.Announcement:AddLeftGroupbox("公告")
 AnnouncementBox:AddLabel("本脚本为缝合脚本")
 AnnouncementBox:AddLabel("作者B站UID: 3706985503525348")
 AnnouncementBox:AddLabel("脚本会持续更新，永久免费")
+AnnouncementBox:AddLabel("更新时间: " .. _lastUpdate)
 
 -- 信息功能
 local InfoBox = Tabs.Announcement:AddLeftGroupbox("信息")
@@ -3199,6 +3201,13 @@ ActionGroup:AddButton("播放动画", function()
 	end)
 end)
 end -- 工具标签页 do...end
+
+-- 服务器功能
+local Tabs_Server = Window:AddTab("服务器功能", "server")
+local ServerBox = Tabs_Server:AddLeftGroupbox("游戏脚本")
+ServerBox:AddButton("养大一只鸡战士", function()
+    safeLoad("https://raw.githubusercontent.com/30124OAO/yi/main/yangdayizhiji")
+end)
 
 -- UI设置
 Tabs["UI Settings"] = Window:AddTab("UI设置", "settings")
