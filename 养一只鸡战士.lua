@@ -1,18 +1,16 @@
---养大一只鸡战士功能面板
---脚本作者b站UID:647396778
+--养大一只鸡战士脚本
 --XJW整合版
 
-local UserInputService = game:GetService("UserInputService")
-local Players = game:GetService("Players")
-local TweenService = game:GetService("TweenService")
-local RunService = game:GetService("RunService")
-local localPlayer = Players.LocalPlayer
-local Camera = workspace.CurrentCamera
+local WindUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/finendss/VowLibrary/refs/heads/main/WINDUI.lua"))()
 
--- 全局总开关
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local localPlayer = Players.LocalPlayer
+
+-- 全局状态
 local globalRunning = true
 local loopChallengeRunning = false
-local panelVisible = false
 local suspendTowerLoops = false
 local detectTriggerCount = 0
 local triggerCooldown = 0
@@ -32,277 +30,7 @@ local recycleDestination
 
 local threadPool = {}
 
--- ========== UI 创建 ==========
-local CoreGui = game:GetService("CoreGui")
-pcall(function()
-    if CoreGui:FindFirstChild("ChickenWarriorUI") then
-        CoreGui.ChickenWarriorUI:Destroy()
-    end
-end)
-
-local ScreenGui = Instance.new("ScreenGui")
-ScreenGui.Name = "ChickenWarriorUI"
-ScreenGui.ResetOnSpawn = false
-ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-ScreenGui.Parent = CoreGui
-
--- 拖拽函数
-local function drag(frame, hold)
-    hold = hold or frame
-    local dragging, dragInput, dragStart, startPos = false
-    hold.InputBegan:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 then
-            dragging, dragStart, startPos = true, input.Position, frame.Position
-            input.Changed:Connect(function()
-                if input.UserInputState == Enum.UserInputState.End then dragging = false end
-            end)
-        end
-    end)
-    frame.InputChanged:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseMovement then dragInput = input end
-    end)
-    UserInputService.InputChanged:Connect(function(input)
-        if input == dragInput and dragging then
-            local d = input.Position - dragStart
-            frame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + d.X, startPos.Y.Scale, startPos.Y.Offset + d.Y)
-        end
-    end)
-end
-
--- 菜单按钮
-local MainButton = Instance.new("TextButton")
-MainButton.Size = UDim2.new(0, 160, 0, 44)
-MainButton.Position = UDim2.new(0.05, 0, 0.3, 0)
-MainButton.BackgroundColor3 = Color3.fromRGB(20, 25, 40)
-MainButton.BorderColor3 = Color3.fromRGB(80, 120, 200)
-MainButton.BorderSizePixel = 2
-MainButton.Text = "养大一只鸡战士"
-MainButton.TextColor3 = Color3.fromRGB(255, 255, 255)
-MainButton.Font = Enum.Font.SourceSansBold
-MainButton.TextSize = 14
-MainButton.Parent = ScreenGui
-Instance.new("UICorner", MainButton).CornerRadius = UDim.new(0, 6)
-
--- 主面板
-local MainPanel = Instance.new("Frame")
-MainPanel.Size = UDim2.new(0, 340, 0, 380)
-MainPanel.Position = UDim2.new(0.5, -170, 0.5, -190)
-MainPanel.BackgroundColor3 = Color3.fromRGB(15, 15, 25)
-MainPanel.BorderColor3 = Color3.fromRGB(60, 100, 160)
-MainPanel.BorderSizePixel = 2
-MainPanel.Visible = false
-MainPanel.Active = true
-MainPanel.Parent = ScreenGui
-Instance.new("UICorner", MainPanel).CornerRadius = UDim.new(0, 8)
-
-local titleBar = Instance.new("Frame", MainPanel)
-titleBar.Size = UDim2.new(1, 0, 0, 36)
-titleBar.BackgroundColor3 = Color3.fromRGB(25, 30, 50)
-titleBar.BorderSizePixel = 0
-Instance.new("UICorner", titleBar).CornerRadius = UDim.new(0, 8)
-
-local Title = Instance.new("TextLabel", titleBar)
-Title.Size = UDim2.new(1, -50, 1, 0)
-Title.Position = UDim2.new(0, 12, 0, 0)
-Title.BackgroundTransparency = 1
-Title.Text = "养大一只鸡战士功能面板"
-Title.TextColor3 = Color3.fromRGB(255, 255, 255)
-Title.Font = Enum.Font.SourceSansBold
-Title.TextSize = 15
-Title.TextXAlignment = Enum.TextXAlignment.Left
-
-local CloseBtn = Instance.new("TextButton", titleBar)
-CloseBtn.Size = UDim2.new(0, 30, 0, 30)
-CloseBtn.Position = UDim2.new(1, -34, 0, 3)
-CloseBtn.BackgroundColor3 = Color3.fromRGB(180, 40, 40)
-CloseBtn.Text = "×"
-CloseBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-CloseBtn.Font = Enum.Font.SourceSansBold
-CloseBtn.TextSize = 18
-CloseBtn.BorderSizePixel = 0
-Instance.new("UICorner", CloseBtn).CornerRadius = UDim.new(0, 6)
-
-drag(MainPanel, titleBar)
-
--- 版本提示
-local VersionTip = Instance.new("TextLabel")
-VersionTip.Size = UDim2.new(1, -20, 0, 20)
-VersionTip.Position = UDim2.new(0, 10, 0, 40)
-VersionTip.BackgroundTransparency = 1
-VersionTip.Text = "XJW整合版 - 持续更新中"
-VersionTip.TextColor3 = Color3.fromRGB(120, 180, 255)
-VersionTip.Font = Enum.Font.SourceSans
-VersionTip.TextSize = 11
-VersionTip.TextWrapped = true
-VersionTip.Parent = MainPanel
-
-local TipLabel = Instance.new("TextLabel")
-TipLabel.Size = UDim2.new(1, -20, 0, 24)
-TipLabel.Position = UDim2.new(0, 10, 0, 62)
-TipLabel.BackgroundTransparency = 1
-TipLabel.Text = "达到重生要求会自动返回撤离并重生！"
-TipLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
-TipLabel.Font = Enum.Font.SourceSans
-TipLabel.TextSize = 11
-TipLabel.TextWrapped = true
-TipLabel.Parent = MainPanel
-
--- 按钮颜色定义
-local btnColor = Color3.fromRGB(20, 25, 35)
-local btnBorder = Color3.fromRGB(60, 100, 200)
-
-local function createButton(text, posY, parent)
-    local btn = Instance.new("TextButton")
-    btn.Size = UDim2.new(1, -20, 0, 34)
-    btn.Position = UDim2.new(0, 10, 0, posY)
-    btn.BackgroundColor3 = btnColor
-    btn.Text = text
-    btn.TextColor3 = Color3.fromRGB(255, 255, 255)
-    btn.Font = Enum.Font.SourceSansBold
-    btn.TextSize = 13
-    btn.BorderSizePixel = 2
-    btn.BorderColor3 = btnBorder
-    btn.Parent = parent
-    Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 4)
-    btn.MouseEnter:Connect(function()
-        TweenService:Create(btn, TweenInfo.new(0.15), {BackgroundTransparency = 0.3}):Play()
-    end)
-    btn.MouseLeave:Connect(function()
-        TweenService:Create(btn, TweenInfo.new(0.15), {BackgroundTransparency = 0}):Play()
-    end)
-    return btn
-end
-
--- 自动重生按钮
-local toggleBtn = createButton("自动重生 当前状态:[关闭] | 本次挂机已重生0次", 92, MainPanel)
-
--- 挂机移动按钮
-local afkMoveBtn = createButton("挂机移动 当前状态:[关闭]", 130, MainPanel)
-
--- 自动捡垃圾按钮
-local scrapBtn = createButton("自动捡垃圾 当前状态:[关闭]", 168, MainPanel)
-
--- 滑块框架
-local SliderFrame = Instance.new("Frame")
-SliderFrame.Size = UDim2.new(1, -20, 0, 24)
-SliderFrame.Position = UDim2.new(0, 10, 0, 210)
-SliderFrame.BackgroundColor3 = Color3.fromRGB(15, 18, 28)
-SliderFrame.BorderSizePixel = 1
-SliderFrame.BorderColor3 = Color3.fromRGB(50, 70, 130)
-SliderFrame.Parent = MainPanel
-Instance.new("UICorner", SliderFrame).CornerRadius = UDim.new(0, 4)
-
-local SliderFill = Instance.new("Frame")
-SliderFill.Size = UDim2.new(0, 0, 1, 0)
-SliderFill.BackgroundColor3 = Color3.fromRGB(50, 180, 230)
-SliderFill.BorderSizePixel = 0
-SliderFill.Parent = SliderFrame
-Instance.new("UICorner", SliderFill).CornerRadius = UDim.new(0, 4)
-
-local SliderKnob = Instance.new("TextButton")
-SliderKnob.Size = UDim2.new(0, 18, 0, 18)
-SliderKnob.Position = UDim2.new(0, -9, 0.5, -9)
-SliderKnob.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-SliderKnob.Text = ""
-SliderKnob.BorderSizePixel = 0
-SliderKnob.Parent = SliderFrame
-Instance.new("UICorner", SliderKnob).CornerRadius = UDim.new(1, 0)
-
-local TipText = Instance.new("TextLabel")
-TipText.Size = UDim2.new(1, -20, 0, 18)
-TipText.Position = UDim2.new(0, 10, 0, 240)
-TipText.BackgroundTransparency = 1
-TipText.Text = "捡（1）垃圾回去"
-TipText.TextColor3 = Color3.fromRGB(220, 220, 220)
-TipText.Font = Enum.Font.SourceSans
-TipText.TextSize = 11
-TipText.Parent = MainPanel
-
-local NoticeText = Instance.new("TextLabel")
-NoticeText.Size = UDim2.new(1, -20, 0, 36)
-NoticeText.Position = UDim2.new(0, 10, 0, 262)
-NoticeText.BackgroundTransparency = 1
-NoticeText.Text = "提示:本脚本无防挂机功能，可用挂机移动或自动点击器代替"
-NoticeText.TextColor3 = Color3.fromRGB(160, 160, 160)
-NoticeText.Font = Enum.Font.SourceSans
-NoticeText.TextSize = 10
-NoticeText.TextWrapped = true
-NoticeText.Parent = MainPanel
-
-local InfoLabel = Instance.new("TextLabel")
-InfoLabel.Size = UDim2.new(1, -20, 0, 20)
-InfoLabel.Position = UDim2.new(0, 10, 0, 300)
-InfoLabel.BackgroundTransparency = 1
-InfoLabel.Text = "脚本会持续更新，永久免费 | 作者B站UID:647396778"
-InfoLabel.TextColor3 = Color3.fromRGB(100, 160, 220)
-InfoLabel.Font = Enum.Font.SourceSans
-InfoLabel.TextSize = 10
-InfoLabel.Parent = MainPanel
-
--- ========== 滑块逻辑 ==========
-local sliderMin = 1
-local sliderMax = 6
-local draggingSlider = false
-
-local function UpdateSliderUI(val)
-    local ratio = (val - sliderMin) / (sliderMax - sliderMin)
-    SliderFill.Size = UDim2.new(ratio, 0, 1, 0)
-    SliderKnob.Position = UDim2.new(ratio, -9, 0.5, -9)
-    selectNum = math.floor(val)
-    TipText.Text = string.format("捡（%d）垃圾回去", selectNum)
-end
-UpdateSliderUI(selectNum)
-
-SliderKnob.InputBegan:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-        draggingSlider = true
-    end
-end)
-UserInputService.InputChanged:Connect(function(input)
-    if draggingSlider and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
-        local absPos = input.Position.X
-        local frameAbs = SliderFrame.AbsolutePosition.X
-        local frameW = SliderFrame.AbsoluteSize.X
-        local t = math.clamp((absPos - frameAbs) / frameW, 0, 1)
-        local v = sliderMin + t * (sliderMax - sliderMin)
-        UpdateSliderUI(v)
-    end
-end)
-UserInputService.InputEnded:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-        draggingSlider = false
-    end
-end)
-
--- ========== 面板显隐 ==========
-MainButton.MouseButton1Click:Connect(function()
-    panelVisible = not panelVisible
-    MainPanel.Visible = panelVisible
-    if panelVisible then
-        MainPanel.Size = UDim2.new(0, 0, 0, 0)
-        MainPanel.Position = UDim2.new(0.5, 0, 0.5, 0)
-        TweenService:Create(MainPanel, TweenInfo.new(0.3, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
-            Size = UDim2.new(0, 340, 0, 380),
-            Position = UDim2.new(0.5, -170, 0.5, -190)
-        }):Play()
-    end
-end)
-
-CloseBtn.MouseButton1Click:Connect(function()
-    panelVisible = false
-    local tw = TweenService:Create(MainPanel, TweenInfo.new(0.2, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
-        Size = UDim2.new(0, 0, 0, 0),
-        Position = UDim2.new(0.5, 0, 0.5, 0)
-    })
-    tw:Play()
-    tw.Completed:Connect(function()
-        MainPanel.Visible = false
-        MainPanel.Size = UDim2.new(0, 340, 0, 380)
-        MainPanel.Position = UDim2.new(0.5, -170, 0.5, -190)
-    end)
-end)
-
--- ========== 检测函数 ==========
+-- ========== 检测函数（前置声明） ==========
 local function IsUIVisible(guiObject)
     local obj = guiObject
     while obj do
@@ -334,50 +62,25 @@ local function CheckVisibleText(guiChild)
     return true
 end
 
--- ========== 游戏功能 ==========
+-- ========== 游戏功能函数 ==========
 local function RunGeneratorCode()
-    pcall(function()
-        game:GetService("ReplicatedStorage").Remotes.UpgradeGenerator:InvokeServer(5)
-    end)
-    pcall(function()
-        game:GetService("ReplicatedStorage").Remotes.UpgradeGenerator:InvokeServer(3)
-    end)
-    pcall(function()
-        game:GetService("ReplicatedStorage").Remotes.UpgradeGenerator:InvokeServer(4)
-    end)
-    pcall(function()
-        game:GetService("ReplicatedStorage").Remotes.UpgradeGenerator:InvokeServer(6)
-    end)
-    pcall(function()
-        game:GetService("ReplicatedStorage").Remotes.BuyGenerator:InvokeServer(6)
-    end)
-    pcall(function()
-        game:GetService("ReplicatedStorage").Remotes.BuyGenerator:InvokeServer(4)
-    end)
-    pcall(function()
-        game:GetService("ReplicatedStorage").Remotes.BuyGenerator:InvokeServer(3)
-    end)
-    pcall(function()
-        game:GetService("ReplicatedStorage").Remotes.BuyGenerator:InvokeServer(5)
-    end)
-    pcall(function()
-        game:GetService("ReplicatedStorage").Remotes.BuyGenerator:InvokeServer(1)
-    end)
-    pcall(function()
-        game:GetService("ReplicatedStorage").Remotes.BuyGenerator:InvokeServer(2)
-    end)
-    pcall(function()
-        game:GetService("ReplicatedStorage").Remotes.UpgradeGenerator:InvokeServer(1)
-    end)
-    pcall(function()
-        game:GetService("ReplicatedStorage").Remotes.UpgradeGenerator:InvokeServer(2)
-    end)
+    pcall(function() game:GetService("ReplicatedStorage").Remotes.UpgradeGenerator:InvokeServer(5) end)
+    pcall(function() game:GetService("ReplicatedStorage").Remotes.UpgradeGenerator:InvokeServer(3) end)
+    pcall(function() game:GetService("ReplicatedStorage").Remotes.UpgradeGenerator:InvokeServer(4) end)
+    pcall(function() game:GetService("ReplicatedStorage").Remotes.UpgradeGenerator:InvokeServer(6) end)
+    pcall(function() game:GetService("ReplicatedStorage").Remotes.BuyGenerator:InvokeServer(6) end)
+    pcall(function() game:GetService("ReplicatedStorage").Remotes.BuyGenerator:InvokeServer(4) end)
+    pcall(function() game:GetService("ReplicatedStorage").Remotes.BuyGenerator:InvokeServer(3) end)
+    pcall(function() game:GetService("ReplicatedStorage").Remotes.BuyGenerator:InvokeServer(5) end)
+    pcall(function() game:GetService("ReplicatedStorage").Remotes.BuyGenerator:InvokeServer(1) end)
+    pcall(function() game:GetService("ReplicatedStorage").Remotes.BuyGenerator:InvokeServer(2) end)
+    pcall(function() game:GetService("ReplicatedStorage").Remotes.UpgradeGenerator:InvokeServer(1) end)
+    pcall(function() game:GetService("ReplicatedStorage").Remotes.UpgradeGenerator:InvokeServer(2) end)
 end
 
 local function RunTowerElevatorSequence()
     local num = 1
-    local totalTimes = 20
-    for i = 1, totalTimes do
+    for i = 1, 20 do
         if not loopChallengeRunning or not globalRunning then break end
         if suspendTowerLoops then break end
         pcall(function()
@@ -391,182 +94,7 @@ local function RunTowerElevatorSequence()
     end
 end
 
--- ========== 自动重生 ==========
-local function startLoop()
-    loopChallengeRunning = true
-    suspendTowerLoops = false
-    toggleBtn.Text = "自动重生 当前状态:[开启] | 本次挂机已重生" .. detectTriggerCount .. "次"
-
-    -- 塔启动 + 塔式电梯
-    table.insert(threadPool, task.spawn(function()
-        if loopChallengeRunning and globalRunning then
-            pcall(function()
-                game:GetService("ReplicatedStorage").Remotes.TowerStart:InvokeServer()
-            end)
-            RunTowerElevatorSequence()
-        end
-    end))
-
-    -- 自动重生
-    table.insert(threadPool, task.spawn(function()
-        while loopChallengeRunning and globalRunning do
-            pcall(function()
-                game:GetService("ReplicatedStorage").Remotes.Rebirth:InvokeServer()
-            end)
-            task.wait(0.5)
-        end
-    end))
-
-    -- 关键词检测
-    table.insert(threadPool, task.spawn(function()
-        local keywordRebirth = "REBIRTH READY!"
-        local keywordNoThanks = "NO THANKS"
-        local keywordTower = "TOWER"
-        local keywordRetreat = "RETREAT"
-        local keywordToChaos = "TO CHAOS"
-        local noThanksCooldown = 0
-
-        while loopChallengeRunning and globalRunning do
-            task.wait(0.5)
-            local playerGui = localPlayer:FindFirstChild("PlayerGui")
-            if not playerGui then continue end
-
-            if triggerCooldown > 0 then triggerCooldown -= 0.5 end
-            if noThanksCooldown > 0 then noThanksCooldown -= 0.5 end
-            if towerKeywordCooldown > 0 then towerKeywordCooldown -= 0.5 end
-            if retreatChaosCooldown > 0 then retreatChaosCooldown -= 0.5 end
-
-            local foundRebirth = false
-            local foundNoThanks = false
-            local foundTower = false
-            local foundRetreat = false
-            local foundToChaos = false
-
-            for _, child in ipairs(playerGui:GetDescendants()) do
-                if not child:IsDescendantOf(game) then continue end
-                if CheckVisibleText(child) then
-                    if string.find(child.Text, keywordRebirth, 1, true) then foundRebirth = true end
-                    if string.find(child.Text, keywordNoThanks, 1, true) then foundNoThanks = true end
-                    if string.find(child.Text, keywordTower, 1, true) then foundTower = true end
-                    if string.find(child.Text, keywordRetreat, 1, true) then foundRetreat = true end
-                    if string.find(child.Text, keywordToChaos, 1, true) then foundToChaos = true end
-                end
-            end
-
-            -- RETREAT / TO CHAOS 逻辑
-            if (foundRetreat or foundToChaos) and retreatChaosCooldown <= 0 then
-                retreatChaosCooldown = 2
-                table.insert(threadPool, task.spawn(function()
-                    task.wait(0.5)
-                    if loopChallengeRunning and globalRunning then
-                        pcall(function()
-                            game:GetService("ReplicatedStorage").Remotes.SetChickenOrder:FireServer("coop")
-                        end)
-                    end
-                end))
-            end
-
-            -- REBIRTH READY 逻辑
-            if foundRebirth and triggerCooldown <= 0 then
-                detectTriggerCount += 1
-                triggerCooldown = 6.66
-                suspendTowerLoops = true
-                toggleBtn.Text = "自动重生 当前状态:[开启] | 本次挂机已重生" .. detectTriggerCount .. "次"
-
-                pcall(function()
-                    game:GetService("ReplicatedStorage").Remotes.SetChickenOrder:FireServer("coop")
-                end)
-                pcall(function()
-                    game:GetService("ReplicatedStorage").Remotes.TowerSurrender:InvokeServer()
-                end)
-
-                table.insert(threadPool, task.spawn(function()
-                    task.wait(9.99)
-                    if loopChallengeRunning and globalRunning then
-                        suspendTowerLoops = false
-                        pcall(function()
-                            game:GetService("ReplicatedStorage").Remotes.TowerStart:InvokeServer()
-                        end)
-                        RunTowerElevatorSequence()
-                    end
-                end))
-            end
-
-            -- NO THANKS 逻辑
-            if foundNoThanks and noThanksCooldown <= 0 then
-                noThanksCooldown = 20
-                table.insert(threadPool, task.spawn(function()
-                    task.wait(0.6)
-                    if loopChallengeRunning and globalRunning then
-                        pcall(function()
-                            game:GetService("ReplicatedStorage").Remotes.TowerContinueDecline:FireServer()
-                        end)
-                    end
-                end))
-            end
-
-            -- TOWER 关键词逻辑
-            if foundTower and towerKeywordCooldown <= 0 then
-                towerKeywordCooldown = 21
-                table.insert(threadPool, task.spawn(function()
-                    task.wait(20)
-                    if not (loopChallengeRunning and globalRunning) then return end
-                    RunTowerElevatorSequence()
-                    if loopChallengeRunning and globalRunning then
-                        pcall(function()
-                            game:GetService("ReplicatedStorage").Remotes.TowerStart:InvokeServer()
-                        end)
-                    end
-                end))
-            end
-        end
-    end))
-
-    -- 生成器升级 + 鸡舍扩展
-    table.insert(threadPool, task.spawn(function()
-        while loopChallengeRunning and globalRunning do
-            RunGeneratorCode()
-            pcall(function()
-                game:GetService("ReplicatedStorage").Remotes.ExpandCoop:InvokeServer()
-            end)
-            task.wait(1)
-        end
-    end))
-
-    -- 生成器升级循环2
-    table.insert(threadPool, task.spawn(function()
-        while loopChallengeRunning and globalRunning do
-            RunGeneratorCode()
-            task.wait(0.9)
-        end
-    end))
-
-    -- 孵化器领取
-    table.insert(threadPool, task.spawn(function()
-        while loopChallengeRunning and globalRunning do
-            pcall(function()
-                game:GetService("ReplicatedStorage").Remotes.IncubatorClaim:InvokeServer()
-            end)
-            task.wait(1)
-        end
-    end))
-end
-
-local function stopLoop()
-    loopChallengeRunning = false
-    suspendTowerLoops = false
-    toggleBtn.Text = "自动重生 当前状态:[关闭] | 本次挂机已重生" .. detectTriggerCount .. "次"
-end
-
-toggleBtn.MouseButton1Click:Connect(function()
-    if loopChallengeRunning then
-        stopLoop()
-    else
-        startLoop()
-    end
-end)
-
--- ========== 挂机移动 ==========
+-- ========== 挂机移动协程 ==========
 local directions = {
     Vector3.new(1, 0, -1), Vector3.new(-1, 0, -1),
     Vector3.new(-1, 0, 1), Vector3.new(1, 0, 1),
@@ -614,20 +142,13 @@ local afkThread = task.spawn(function()
 end)
 table.insert(threadPool, afkThread)
 
-afkMoveBtn.MouseButton1Click:Connect(function()
-    autoAfk = not autoAfk
-    if autoAfk then
-        afkMoveBtn.Text = "挂机移动 当前状态:[开启]"
-    else
-        afkMoveBtn.Text = "挂机移动 当前状态:[关闭]"
-    end
-end)
-
--- ========== 自动捡垃圾 ==========
-local scrapThread1, scrapThread2
-
-local function ScrapMainLoop()
-    while autoScrapRunning and globalRunning do
+-- ========== 自动捡垃圾协程 ==========
+local scrapThread1 = task.spawn(function()
+    while globalRunning do
+        if not autoScrapRunning then
+            task.wait(0.5)
+            continue
+        end
         local delayTime = 0.5
         local recyclerUI = workspace:FindFirstChild("Recyclers") and workspace.Recyclers:FindFirstChild("RecyclerUI")
         if recyclerUI and recyclerUI:FindFirstChildOfClass("Part") then
@@ -694,54 +215,286 @@ local function ScrapMainLoop()
         end
         task.wait(delayTime)
     end
-    local char = localPlayer.Character
-    if char and char:FindFirstChildOfClass("Humanoid") then
-        char.Humanoid:Stop()
-    end
-end
+end)
+table.insert(threadPool, scrapThread1)
 
-local function UpgradeRecyclerLoop()
-    while autoScrapRunning and globalRunning do
+local scrapThread2 = task.spawn(function()
+    while globalRunning do
+        if autoScrapRunning then
+            pcall(function()
+                game:GetService("ReplicatedStorage").Remotes.UpgradeRecycler:InvokeServer()
+            end)
+        end
         task.wait(0.5)
-        pcall(function()
-            game:GetService("ReplicatedStorage").Remotes.UpgradeRecycler:InvokeServer()
-        end)
     end
-end
+end)
+table.insert(threadPool, scrapThread2)
 
-scrapBtn.MouseButton1Click:Connect(function()
-    autoScrapRunning = not autoScrapRunning
-    if autoScrapRunning then
-        scrapBtn.Text = "自动捡垃圾 当前状态:[开启]"
-        targetScrapPos = nil
-        collectedCount = 0
-        scrapThread1 = task.spawn(ScrapMainLoop)
-        scrapThread2 = task.spawn(UpgradeRecyclerLoop)
-        table.insert(threadPool, scrapThread1)
-        table.insert(threadPool, scrapThread2)
-    else
-        scrapBtn.Text = "自动捡垃圾 当前状态:[关闭]"
-        autoScrapRunning = false
-        targetScrapPos = nil
-        local char = localPlayer.Character
-        if char and char:FindFirstChildOfClass("Humanoid") then
-            char.Humanoid:Stop()
+-- ========== 创建UI ==========
+local Window = WindUI:CreateWindow({
+    Title = "养大一只鸡战士",
+    Icon = "sparkles",
+    Author = "XJW",
+    Folder = "ChickenWarrior",
+    Size = UDim2.fromOffset(450, 420),
+    Theme = "Dark",
+    HideSearchBar = false,
+})
+
+Window:EditOpenButton({
+    Title = "养大一只鸡战士",
+    Icon = "monitor",
+    CornerRadius = UDim.new(0, 16),
+    StrokeThickness = 2,
+    Color = ColorSequence.new(Color3.fromHex("FF6B6B")),
+    Draggable = true,
+})
+
+-- 时间标签
+local TimeTag = Window:Tag({
+    Title = "00:00",
+    Color = Color3.fromRGB(255, 255, 255)
+})
+
+local hue = 0
+task.spawn(function()
+    while true do
+        local now = os.date("*t")
+        local hours = string.format("%02d", now.hour)
+        local minutes = string.format("%02d", now.min)
+        hue = (hue + 0.01) % 1
+        local rainbowColor = Color3.fromHSV(hue, 1, 1)
+        TimeTag:SetTitle(hours .. ":" .. minutes)
+        TimeTag:SetColor(rainbowColor)
+        task.wait(0.06)
+    end
+end)
+
+Window:Tag({
+    Title = "脚本会持续更新，永久免费",
+    Color = Color3.fromHex("#7FDBFF")
+})
+
+-- ========== 主功能 Tab ==========
+local Tab = Window:Tab({
+    Title = "功能",
+    Icon = "settings",
+    Locked = false,
+})
+
+Tab:Section({Title = "自动功能", TextXAlignment = "Left", TextSize = 17})
+
+-- 自动重生开关
+Tab:Toggle({
+    Title = "自动重生",
+    Default = false,
+    Callback = function(state)
+        loopChallengeRunning = state
+        if state then
+            suspendTowerLoops = false
+            WindUI:Notify({Title = "自动重生", Content = "已开启自动重生", Duration = 3})
+
+            -- 塔启动 + 塔式电梯
+            table.insert(threadPool, task.spawn(function()
+                if loopChallengeRunning and globalRunning then
+                    pcall(function()
+                        game:GetService("ReplicatedStorage").Remotes.TowerStart:InvokeServer()
+                    end)
+                    RunTowerElevatorSequence()
+                end
+            end))
+
+            -- 自动重生
+            table.insert(threadPool, task.spawn(function()
+                while loopChallengeRunning and globalRunning do
+                    pcall(function()
+                        game:GetService("ReplicatedStorage").Remotes.Rebirth:InvokeServer()
+                    end)
+                    task.wait(0.5)
+                end
+            end))
+
+            -- 关键词检测
+            table.insert(threadPool, task.spawn(function()
+                local keywordRebirth = "REBIRTH READY!"
+                local keywordNoThanks = "NO THANKS"
+                local keywordTower = "TOWER"
+                local keywordRetreat = "RETREAT"
+                local keywordToChaos = "TO CHAOS"
+                local noThanksCooldown = 0
+
+                while loopChallengeRunning and globalRunning do
+                    task.wait(0.5)
+                    local playerGui = localPlayer:FindFirstChild("PlayerGui")
+                    if not playerGui then continue end
+
+                    if triggerCooldown > 0 then triggerCooldown -= 0.5 end
+                    if noThanksCooldown > 0 then noThanksCooldown -= 0.5 end
+                    if towerKeywordCooldown > 0 then towerKeywordCooldown -= 0.5 end
+                    if retreatChaosCooldown > 0 then retreatChaosCooldown -= 0.5 end
+
+                    local foundRebirth, foundNoThanks, foundTower, foundRetreat, foundToChaos = false, false, false, false, false
+
+                    for _, child in ipairs(playerGui:GetDescendants()) do
+                        if not child:IsDescendantOf(game) then continue end
+                        if CheckVisibleText(child) then
+                            if string.find(child.Text, keywordRebirth, 1, true) then foundRebirth = true end
+                            if string.find(child.Text, keywordNoThanks, 1, true) then foundNoThanks = true end
+                            if string.find(child.Text, keywordTower, 1, true) then foundTower = true end
+                            if string.find(child.Text, keywordRetreat, 1, true) then foundRetreat = true end
+                            if string.find(child.Text, keywordToChaos, 1, true) then foundToChaos = true end
+                        end
+                    end
+
+                    if (foundRetreat or foundToChaos) and retreatChaosCooldown <= 0 then
+                        retreatChaosCooldown = 2
+                        table.insert(threadPool, task.spawn(function()
+                            task.wait(0.5)
+                            if loopChallengeRunning and globalRunning then
+                                pcall(function()
+                                    game:GetService("ReplicatedStorage").Remotes.SetChickenOrder:FireServer("coop")
+                                end)
+                            end
+                        end))
+                    end
+
+                    if foundRebirth and triggerCooldown <= 0 then
+                        detectTriggerCount += 1
+                        triggerCooldown = 6.66
+                        suspendTowerLoops = true
+
+                        pcall(function()
+                            game:GetService("ReplicatedStorage").Remotes.SetChickenOrder:FireServer("coop")
+                        end)
+                        pcall(function()
+                            game:GetService("ReplicatedStorage").Remotes.TowerSurrender:InvokeServer()
+                        end)
+
+                        table.insert(threadPool, task.spawn(function()
+                            task.wait(9.99)
+                            if loopChallengeRunning and globalRunning then
+                                suspendTowerLoops = false
+                                pcall(function()
+                                    game:GetService("ReplicatedStorage").Remotes.TowerStart:InvokeServer()
+                                end)
+                                RunTowerElevatorSequence()
+                            end
+                        end))
+                    end
+
+                    if foundNoThanks and noThanksCooldown <= 0 then
+                        noThanksCooldown = 20
+                        table.insert(threadPool, task.spawn(function()
+                            task.wait(0.6)
+                            if loopChallengeRunning and globalRunning then
+                                pcall(function()
+                                    game:GetService("ReplicatedStorage").Remotes.TowerContinueDecline:FireServer()
+                                end)
+                            end
+                        end))
+                    end
+
+                    if foundTower and towerKeywordCooldown <= 0 then
+                        towerKeywordCooldown = 21
+                        table.insert(threadPool, task.spawn(function()
+                            task.wait(20)
+                            if not (loopChallengeRunning and globalRunning) then return end
+                            RunTowerElevatorSequence()
+                            if loopChallengeRunning and globalRunning then
+                                pcall(function()
+                                    game:GetService("ReplicatedStorage").Remotes.TowerStart:InvokeServer()
+                                end)
+                            end
+                        end))
+                    end
+                end
+            end))
+
+            -- 生成器升级 + 鸡舍扩展
+            table.insert(threadPool, task.spawn(function()
+                while loopChallengeRunning and globalRunning do
+                    RunGeneratorCode()
+                    pcall(function()
+                        game:GetService("ReplicatedStorage").Remotes.ExpandCoop:InvokeServer()
+                    end)
+                    task.wait(1)
+                end
+            end))
+
+            -- 生成器升级循环2
+            table.insert(threadPool, task.spawn(function()
+                while loopChallengeRunning and globalRunning do
+                    RunGeneratorCode()
+                    task.wait(0.9)
+                end
+            end))
+
+            -- 孵化器领取
+            table.insert(threadPool, task.spawn(function()
+                while loopChallengeRunning and globalRunning do
+                    pcall(function()
+                        game:GetService("ReplicatedStorage").Remotes.IncubatorClaim:InvokeServer()
+                    end)
+                    task.wait(1)
+                end
+            end))
+        else
+            suspendTowerLoops = false
+            WindUI:Notify({Title = "自动重生", Content = "已关闭 | 本次挂机已重生" .. detectTriggerCount .. "次", Duration = 3})
         end
     end
-end)
+})
 
--- ========== 入场动画 ==========
-MainButton.Size = UDim2.new(0, 0, 0, 0)
-MainButton.Position = UDim2.new(0.05, 0, 0.3, 0)
-TweenService:Create(MainButton, TweenInfo.new(0.4, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
-    Size = UDim2.new(0, 160, 0, 44)
-}):Play()
+-- 挂机移动开关
+Tab:Toggle({
+    Title = "挂机移动",
+    Default = false,
+    Callback = function(state)
+        autoAfk = state
+        if state then
+            WindUI:Notify({Title = "挂机移动", Content = "已开启挂机移动", Duration = 3})
+        else
+            WindUI:Notify({Title = "挂机移动", Content = "已关闭挂机移动", Duration = 3})
+        end
+    end
+})
 
--- 通知
-pcall(function()
-    game.StarterGui:SetCore("SendNotification", {
-        Title = "养大一只鸡战士",
-        Text = "脚本已加载！点击菜单按钮打开面板",
-        Duration = 5
-    })
-end)
+-- 自动捡垃圾开关
+Tab:Toggle({
+    Title = "自动捡垃圾",
+    Default = false,
+    Callback = function(state)
+        autoScrapRunning = state
+        if state then
+            targetScrapPos = nil
+            collectedCount = 0
+            WindUI:Notify({Title = "自动捡垃圾", Content = "已开启自动捡垃圾", Duration = 3})
+        else
+            targetScrapPos = nil
+            local char = localPlayer.Character
+            if char and char:FindFirstChildOfClass("Humanoid") then
+                char.Humanoid:Stop()
+            end
+            WindUI:Notify({Title = "自动捡垃圾", Content = "已关闭自动捡垃圾", Duration = 3})
+        end
+    end
+})
+
+Tab:Section({Title = "捡垃圾数量", TextXAlignment = "Left", TextSize = 17})
+
+-- 滑块: 捡垃圾数量 (1-10)
+local scrapSlider = Tab:Slider({
+    Title = "捡（1）垃圾回去",
+    Value = {Min = 1, Max = 10, Default = 1},
+    Increment = 1,
+    Callback = function(value)
+        selectNum = math.floor(value)
+        scrapSlider:SetTitle(string.format("捡（%d）垃圾回去", selectNum))
+    end
+})
+
+WindUI:Notify({
+    Title = "养大一只鸡战士",
+    Content = "脚本已加载！",
+    Duration = 5
+})
