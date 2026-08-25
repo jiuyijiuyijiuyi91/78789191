@@ -32,6 +32,7 @@ local Tabs = {
 local AnnouncementBox = Tabs.Announcement:AddLeftGroupbox("公告")
 AnnouncementBox:AddLabel("本脚本为缝合脚本")
 AnnouncementBox:AddLabel("作者B站UID: 3706985503525348")
+AnnouncementBox:AddLabel("脚本会持续更新，永久免费")
 
 -- 信息功能
 local InfoBox = Tabs.Announcement:AddLeftGroupbox("信息")
