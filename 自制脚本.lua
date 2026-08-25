@@ -8,7 +8,7 @@ local function safeLoad(url)
     end)
     if ok and content and #content > 0 then
         local fn = loadstring(content)
-        if fn then fn() end
+        if fn then return fn() end
     end
 end
 
