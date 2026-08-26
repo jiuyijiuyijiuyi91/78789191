@@ -3208,6 +3208,9 @@ local ServerBox = Tabs_Server:AddLeftGroupbox("游戏脚本")
 ServerBox:AddButton("养大一只鸡战士", function()
     safeLoad("https://raw.githubusercontent.com/30124OAO/yi/main/yangdayizhiji")
 end)
+ServerBox:AddButton("忍者传奇", function()
+    safeLoad("https://raw.githubusercontent.com/jiuyijiuyijiuyi91/78789191/refs/heads/main/%E5%BF%8D%E8%80%85%E4%BC%A0%E5%A5%87XJW.lua")
+end)
 
 -- UI设置
 Tabs["UI Settings"] = Window:AddTab("UI设置", "settings")
