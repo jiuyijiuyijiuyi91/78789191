@@ -1,6 +1,6 @@
 local repo = "https://raw.githubusercontent.com/ATLASTEAM01/Obsidian/main/"
 local _startTime = tick()
-local _lastUpdate = "2026年8月26日7点04分" -- 脚本最后更新时间（每次更新功能后手动修改）
+local _lastUpdate = "2026年8月26日" -- 脚本最后更新时间（每次更新功能后手动修改）
 
 -- 安全加载函数
 local function safeLoad(url)
@@ -3281,6 +3281,10 @@ ServerBox:AddButton("忍者传奇", function()
 end)
 ServerBox:AddButton("力量传奇（安脚本）", function()
     loadstring(game:HttpGet("https://raw.githubusercontent.com/Anscripterato/QQ2134702438/refs/heads/main/byato/AnScript/atoscript"))()
+end)
+-- 新增 极速传奇
+ServerBox:AddButton("极速传奇", function()
+    loadstring(game:HttpGet("https://raw.githubusercontent.com/jiuyijiuyijiuyi91/78789191/refs/heads/main/XJW%E6%9E%81%E9%80%9F%E4%BC%A0%E5%A5%87.lua"))()
 end)
 
 -- UI设置
