@@ -1,6 +1,6 @@
 local repo = "https://raw.githubusercontent.com/ATLASTEAM01/Obsidian/main/"
 local _startTime = tick()
-local _lastUpdate = "2026年8月25日" -- 脚本最后更新时间（每次更新功能后手动修改）
+local _lastUpdate = "2026年8月26日5点04分" -- 脚本最后更新时间（每次更新功能后手动修改）
 
 -- 安全加载函数
 local function safeLoad(url)
@@ -1189,11 +1189,79 @@ MainSettingsBox:AddButton("叶脚本", function()
     safeLoad("https://raw.githubusercontent.com/roblox-ye/QQ515966991/refs/heads/main/ROBLOX-CNVIP-XIAOYE.lua")
 end)
 
+MainSettingsBox:AddButton("恐脚本", function()
+    loadstring(game:HttpGet("https://raw.githubusercontent.com/kongbaNB/9178/refs/heads/main/恐脚本加载器"))()
+end)
+
 -- 杂项 UI
 local MiscBox = Tabs.Main:AddLeftGroupbox("杂项")
 MiscBox:AddToggle("Char_AntiAfk", { Text = "反挂机", Default = false }):OnChanged(function(v)
     CharStates.AntiAfk.Enabled = v
     if v then startAntiAfk() else stopAntiAfk() end
+end)
+
+-- 假延迟 (Fake Lag) - 整合自假延迟源码
+local FakeLag = {
+    Enabled = false,
+    Interval = 0.07,
+    AnchoredDuration = 0.4,
+    TeleportEnabled = false,
+    TeleportDistance = 10,
+}
+local fakeLagRunning = false
+local function FakeLag_DoTeleport()
+    local Character = game.Players.LocalPlayer.Character
+    if Character then
+        local Root = Character:FindFirstChild("HumanoidRootPart")
+        local Humanoid = Character:FindFirstChild("Humanoid")
+        if Root and Humanoid then
+            local MoveDir = Humanoid.MoveDirection
+            if MoveDir.Magnitude > 0 then
+                local Distance = math.random(FakeLag.TeleportDistance * 100) / 100
+                local RootCFrame = Root.CFrame
+                local TargetPos = RootCFrame.Position + MoveDir.Unit * Distance
+                local LookVector = RootCFrame.LookVector
+                Root.CFrame = CFrame.new(TargetPos, TargetPos + LookVector)
+            end
+        end
+    end
+end
+MiscBox:AddToggle("FakeLag_Enabled", { Text = "假延迟", Default = false }):OnChanged(function(v)
+    FakeLag.Enabled = v
+    if v and not fakeLagRunning then
+        fakeLagRunning = true
+        task.spawn(function()
+            while fakeLagRunning do
+                if FakeLag.Enabled then
+                    local Character = game.Players.LocalPlayer.Character
+                    if Character then
+                        local Root = Character:FindFirstChild("HumanoidRootPart")
+                        if Root then
+                            Root.Anchored = true
+                            task.wait(FakeLag.AnchoredDuration)
+                            Root.Anchored = false
+                            if FakeLag.TeleportEnabled then
+                                FakeLag_DoTeleport()
+                            end
+                        end
+                    end
+                end
+                task.wait(FakeLag.Interval)
+            end
+        end)
+    end
+end)
+MiscBox:AddSlider("FakeLag_Interval", { Text = "假延迟间隔", Default = 0.07, Min = 0.07, Max = 1, Rounding = 2 }):OnChanged(function(v)
+    FakeLag.Interval = v
+end)
+MiscBox:AddSlider("FakeLag_Anchored", { Text = "锚定时长", Default = 0.4, Min = 0.1, Max = 10, Rounding = 2 }):OnChanged(function(v)
+    FakeLag.AnchoredDuration = v
+end)
+MiscBox:AddToggle("FakeLag_Teleport", { Text = "假wifi瞬移", Default = false }):OnChanged(function(v)
+    FakeLag.TeleportEnabled = v
+end)
+MiscBox:AddSlider("FakeLag_TeleportDist", { Text = "瞬移距离", Default = 10, Min = 5, Max = 50, Rounding = 0 }):OnChanged(function(v)
+    FakeLag.TeleportDistance = v
 end)
 
 -- ============================================
@@ -3210,6 +3278,9 @@ ServerBox:AddButton("养大一只鸡战士", function()
 end)
 ServerBox:AddButton("忍者传奇", function()
     safeLoad("https://raw.githubusercontent.com/jiuyijiuyijiuyi91/78789191/refs/heads/main/%E5%BF%8D%E8%80%85%E4%BC%A0%E5%A5%87XJW.lua")
+end)
+ServerBox:AddButton("力量传奇（安脚本）", function()
+    loadstring(game:HttpGet("https://raw.githubusercontent.com/Anscripterato/QQ2134702438/refs/heads/main/byato/AnScript/atoscript"))()
 end)
 
 -- UI设置
