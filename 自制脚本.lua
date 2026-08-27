@@ -1592,11 +1592,6 @@ if BSplayerCountText then
     BSplayerCountText.Outline = true
     BSplayerCountText.OutlineColor = Color3.new(0, 0, 0)
 end
-BSplayerCountText.Visible = false
-BSplayerCountText.Size = 20
-BSplayerCountText.Font = Drawing.Fonts.Monospace
-BSplayerCountText.Outline = true
-BSplayerCountText.OutlineColor = Color3.new(0, 0, 0)
 
 local BSfovCircle
 pcall(function()
@@ -2102,12 +2097,12 @@ end)
 end)
 
 -- ---------- 高级功能 (移至杂项) ----------
-local Players       = game:GetService("Players")
-local RunService    = game:GetService("RunService")
-local Lighting      = game:GetService("Lighting")
-local StarterGui    = game:GetService("StarterGui")
-local VirtualUser   = game:GetService("VirtualUser")
-local LocalPlayer    = Players.LocalPlayer
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local Lighting = game:GetService("Lighting")
+local StarterGui = game:GetService("StarterGui")
+local VirtualUser = game:GetService("VirtualUser")
+local LocalPlayer = Players.LocalPlayer
 
 -- ---------- 公共兼容封装 ----------
 local _newcclosure = newcclosure or function(f) return f end
@@ -2140,7 +2135,6 @@ local function getCharacterRoot()
     return char, root
 end
 
-
 -- ############################################################
 --  左侧分组
 -- ############################################################
@@ -2150,32 +2144,32 @@ end
 -- ============================================================
 local NightVisionBox = Tabs.Main:AddLeftGroupbox("夜视功能")
 
-local nightVisionEnabled  = false
-local nightVisionConn      = nil
-local originalLighting      = {}
+local nightVisionEnabled = false
+local nightVisionConn = nil
+local originalLighting = {}
 
 local function saveOriginalLighting()
-    originalLighting.ClockTime           = Lighting.ClockTime
-    originalLighting.Brightness          = Lighting.Brightness
-    originalLighting.ExposureCompensation= Lighting.ExposureCompensation
-    originalLighting.Ambient             = Lighting.Ambient
-    originalLighting.OutdoorAmbient      = Lighting.OutdoorAmbient
-    originalLighting.GlobalShadows       = Lighting.GlobalShadows
+    originalLighting.ClockTime = Lighting.ClockTime
+    originalLighting.Brightness = Lighting.Brightness
+    originalLighting.ExposureCompensation = Lighting.ExposureCompensation
+    originalLighting.Ambient = Lighting.Ambient
+    originalLighting.OutdoorAmbient = Lighting.OutdoorAmbient
+    originalLighting.GlobalShadows = Lighting.GlobalShadows
 end
 
 local function restoreOriginalLighting()
     pcall(function()
-        Lighting.ClockTime            = originalLighting.ClockTime            or 14
-        Lighting.Brightness           = originalLighting.Brightness           or 2
+        Lighting.ClockTime = originalLighting.ClockTime or 14
+        Lighting.Brightness = originalLighting.Brightness or 2
         Lighting.ExposureCompensation = originalLighting.ExposureCompensation or 0
-        Lighting.Ambient              = originalLighting.Ambient             or Color3.fromRGB(128, 128, 128)
-        Lighting.OutdoorAmbient       = originalLighting.OutdoorAmbient      or Color3.fromRGB(128, 128, 128)
-        Lighting.GlobalShadows       = originalLighting.GlobalShadows
+        Lighting.Ambient = originalLighting.Ambient or Color3.fromRGB(128, 128, 128)
+        Lighting.OutdoorAmbient = originalLighting.OutdoorAmbient or Color3.fromRGB(128, 128, 128)
+        Lighting.GlobalShadows = originalLighting.GlobalShadows
     end)
 end
 
 NightVisionBox:AddToggle("NightVisionToggle", {
-    Text    = "夜视模式",
+    Text = "夜视模式",
     Default = false,
 }):OnChanged(function(v)
     nightVisionEnabled = v
@@ -2183,11 +2177,11 @@ NightVisionBox:AddToggle("NightVisionToggle", {
         saveOriginalLighting()
         if nightVisionConn then nightVisionConn:Disconnect() end
         nightVisionConn = RunService.RenderStepped:Connect(function()
-            Lighting.ClockTime            = 15
-            Lighting.Brightness           = 2
+            Lighting.ClockTime = 15
+            Lighting.Brightness = 2
             Lighting.ExposureCompensation = 0.5
-            Lighting.Ambient              = Color3.fromRGB(255, 255, 255)
-            Lighting.OutdoorAmbient       = Color3.fromRGB(255, 255, 255)
+            Lighting.Ambient = Color3.fromRGB(255, 255, 255)
+            Lighting.OutdoorAmbient = Color3.fromRGB(255, 255, 255)
         end)
         Notify("夜视", "夜视模式已开启", 3)
     else
@@ -2199,8 +2193,6 @@ NightVisionBox:AddToggle("NightVisionToggle", {
         Notify("夜视", "夜视模式已关闭，已恢复原值", 3)
     end
 end)
-
-
 
 FeatureBox:AddButton("踏空行走", function()
     pcall(function()
@@ -2215,13 +2207,12 @@ local airSwimBV = nil
 local airSwimBG = nil
 
 FeatureBox:AddToggle("AirSwimToggle", {
-    Text    = "空中游泳",
+    Text = "空中游泳",
     Default = false,
 }):OnChanged(function(state)
     airSwimEnabled = state
     local speaker = game:GetService("Players").LocalPlayer
     if state then
-        -- 禁用所有Humanoid状态
         local char = speaker.Character
         if not char then return end
         local hum = char:FindFirstChildOfClass("Humanoid")
@@ -2309,7 +2300,6 @@ FeatureBox:AddToggle("AirSwimToggle", {
             airSwimBG.CFrame = CFrame.new(root.Position, root.Position + workspace.CurrentCamera.CFrame.LookVector)
         end)
 
-        -- 角色重生后重新设置
         airSwimConns.charAdded = speaker.CharacterAdded:Connect(function(newChar)
             task.wait(0.7)
             local newHum = newChar:FindFirstChildOfClass("Humanoid")
@@ -2339,7 +2329,6 @@ FeatureBox:AddToggle("AirSwimToggle", {
 
         Notify("空中游泳", "空中游泳已开启 - 可在空中自由移动", 3)
     else
-        -- 恢复所有Humanoid状态
         local char = speaker.Character
         if char then
             local hum = char:FindFirstChildOfClass("Humanoid")
@@ -2360,7 +2349,6 @@ FeatureBox:AddToggle("AirSwimToggle", {
                 hum:ChangeState(Enum.HumanoidStateType.RunningNoPhysics)
             end
         end
-        -- 断开所有连接
         for name, conn in pairs(airSwimConns) do
             if typeof(conn) == "RBXScriptConnection" then
                 conn:Disconnect()
@@ -2372,8 +2360,6 @@ FeatureBox:AddToggle("AirSwimToggle", {
         Notify("空中游泳", "空中游泳已关闭", 3)
     end
 end)
-
-
 
 -- ============================================================
 -- 3. 防虚空 (BS源码版 - PlayerProtection.AntiVoid)
@@ -2421,28 +2407,23 @@ function bsAntiVoid:_core()
     local humanoid = character:FindFirstChildOfClass("Humanoid")
     if rootPart and humanoid and humanoid.Health > 0 then
         if rootPart.Position.Y < self._voidY then
-            -- 在玩家下方创建透明平台
             if not self._platform then
                 self:_createPlatform()
             end
-            -- 平台放在玩家下方稍低位置
             self._platform.Position = Vector3.new(
                 rootPart.Position.X,
                 self._voidY - 5,
                 rootPart.Position.Z
             )
-            -- 同时把角色托上去
             rootPart.CFrame = CFrame.new(rootPart.Position.X, self._voidY + 3, rootPart.Position.Z)
             rootPart.Velocity = Vector3.new(0, 0, 0)
         else
-            -- 玩家在安全高度，移除平台
             if self._platform then
                 self._platform:Destroy()
                 self._platform = nil
             end
         end
     else
-        -- 角色无效，移除平台
         if self._platform then
             self._platform:Destroy()
             self._platform = nil
@@ -2456,7 +2437,6 @@ function bsAntiVoid:enable()
     self._loop = RunService.RenderStepped:Connect(function()
         self:_core()
     end)
-    -- 角色重生后自动重启
     LocalPlayer.CharacterAdded:Connect(function(newChar)
         newChar:WaitForChild("HumanoidRootPart")
         if self._enabled and not self._loop then
@@ -2480,7 +2460,7 @@ function bsAntiVoid:disable()
 end
 
 AntiVoidBox:AddToggle("AntiVoidToggle", {
-    Text    = "防虚空掉落",
+    Text = "防虚空掉落",
     Default = false,
 }):OnChanged(function(state)
     if state then
@@ -2490,23 +2470,19 @@ AntiVoidBox:AddToggle("AntiVoidToggle", {
     end
 end)
 
-
-
 -- ============================================================
 -- 4. 防卡顿优化
 -- ============================================================
 local OptimizeBox = Tabs.Main:AddLeftGroupbox("防卡顿优化")
 
-local optimizeEnabled   = false
-local optimizeOriginal   = {}
-local disabledParticles  = {}
+local optimizeEnabled = false
+local optimizeOriginal = {}
+local disabledParticles = {}
 
 local function applyOptimization()
-    -- 全局阴影
     optimizeOriginal.GlobalShadows = Lighting.GlobalShadows
     Lighting.GlobalShadows = false
 
-    -- 关闭后处理特效 (Bloom / ColorCorrection / SunRays / Blur / DepthOfField)
     optimizeOriginal.PostEffects = {}
     for _, obj in ipairs(Lighting:GetChildren()) do
         if obj:IsA("PostEffect")
@@ -2520,7 +2496,6 @@ local function applyOptimization()
         end
     end
 
-    -- 降低模拟/流式半径
     pcall(function()
         if workspace.StreamingEnabled then
             optimizeOriginal.StreamingTargetRadius = workspace.StreamingTargetRadius
@@ -2530,7 +2505,6 @@ local function applyOptimization()
         end
     end)
 
-    -- 禁用所有粒子特效
     disabledParticles = {}
     for _, obj in ipairs(workspace:GetDescendants()) do
         if obj:IsA("ParticleEmitter") or obj:IsA("Trail") or obj:IsA("Beam") then
@@ -2554,761 +2528,4 @@ local function restoreOptimization()
     end
     pcall(function()
         if workspace.StreamingEnabled then
-            if optimizeOriginal.StreamingTargetRadius then workspace.StreamingTargetRadius = optimizeOriginal.StreamingTargetRadius end
-            if optimizeOriginal.StreamingMinRadius then workspace.StreamingMinRadius = optimizeOriginal.StreamingMinRadius end
-        end
-    end)
-    for _, obj in ipairs(disabledParticles) do
-        pcall(function() obj.Enabled = true end)
-    end
-    disabledParticles = {}
-end
-
-OptimizeBox:AddToggle("OptimizeToggle", {
-    Text    = "性能优化",
-    Default = false,
-}):OnChanged(function(v)
-    optimizeEnabled = v
-    if v then
-        applyOptimization()
-        Notify("防卡顿优化", "优化已开启", 3)
-    else
-        restoreOptimization()
-        Notify("防卡顿优化", "已恢复原设置", 3)
-    end
-end)
-
-
-
--- ############################################################
---  右侧分组
--- ############################################################
-
--- ============================================================
--- 7. 防踢功能
--- ============================================================
-local AntiKickBox = Tabs.Main:AddRightGroupbox("防踢功能")
-
-local antiKickApplied = false
-
-local function setupAntiKick()
-    if antiKickApplied then
-        Notify("防踢", "防踢已启用，无需重复", 3)
-        return
-    end
-
-    local ok1 = false
-    -- hookmetamethod: 拦截 __namecall 中的 Kick
-    if _hookmetamethod then
-        ok1 = pcall(function()
-            local oldNamecall
-            oldNamecall = _hookmetamethod(game, "__namecall", _newcclosure(function(self, ...)
-                local method = _getnamecallmethod and _getnamecallmethod() or ""
-                if method == "Kick" then
-                    local isCaller = _checkcaller and _checkcaller()
-                    if not isCaller then
-                        Notify("防踢", "拦截 __namecall Kick 调用", 4)
-                        return nil
-                    end
-                end
-                return oldNamecall(self, ...)
-            end))
-        end)
-    end
-
-    -- hookfunction: 拦截 LocalPlayer.Kick
-    local ok2 = false
-    if _hookfunction then
-        ok2 = pcall(function()
-            local oldKick
-            oldKick = _hookfunction(LocalPlayer.Kick, _newcclosure(function(...)
-                Notify("防踢", "拦截 LocalPlayer.Kick 调用", 4)
-                return nil
-            end))
-        end)
-    end
-
-    if ok1 or ok2 then
-        antiKickApplied = true
-        Notify("防踢", "防踢已启用，将拦截所有Kick调用", 4)
-    else
-        Notify("防踢", "防踢启用失败，执行器可能不支持", 4)
-    end
-end
-
-AntiKickBox:AddButton("启用防踢", function()
-    setupAntiKick()
-end)
-
-
-
--- ============================================================
--- 8. 绕过反作弊
--- ============================================================
-local BypassBox = Tabs.Main:AddRightGroupbox("绕过功能")
-
-BypassBox:AddButton("绕过反作弊(Adonis)", function()
-    local ok, err = pcall(function()
-        safeLoad("https://raw.githubusercontent.com/.../adoniscries.lua")
-    end)
-    if ok then
-        Notify("绕过", "绕过反作弊脚本已加载", 3)
-    else
-        Notify("绕过", "加载失败: " .. tostring(err), 4)
-    end
-end)
-
-
--- ============================================================
--- 9. 绕过移动检测
--- ============================================================
-local walkSpeedProtected = false
-
-BypassBox:AddButton("绕过移动检测", function()
-    local cleared = 0
-    -- 遍历 getgc() 表，置空相关检测函数
-    if _getgc then
-        pcall(function()
-            local keys = {"restrictTeleport", "checkCFrame", "validateMove", "restrictMove"}
-            for _, v in ipairs(_getgc()) do
-                if type(v) == "table" then
-                    for _, key in ipairs(keys) do
-                        if rawget(v, key) ~= nil then
-                            pcall(function()
-                                rawset(v, key, nil)
-                            end)
-                            cleared = cleared + 1
-                        end
-                    end
-                end
-            end
-        end)
-    end
-
-    -- WalkSpeed 保护 (低于16时重置为16)
-    if not walkSpeedProtected then
-        walkSpeedProtected = true
-        task.spawn(function()
-            while walkSpeedProtected do
-                pcall(function()
-                    local char, root = getCharacterRoot()
-                    if char then
-                        local hum = char:FindFirstChildOfClass("Humanoid")
-                        if hum and hum.WalkSpeed < 16 then
-                            hum.WalkSpeed = 16
-                        end
-                    end
-                end)
-                task.wait(0.5)
-            end
-        end)
-    end
-
-    Notify("绕过", string.format("移动检测已绕过(清理%d项)，WalkSpeed保护已开启", cleared), 4)
-end)
-
--- ============================================================
--- 工具 Tab
--- ============================================================
-do
-local Tabs_Tools = Window:AddTab("工具", "wrench")
-
--- 服务
-local Players = game:GetService("Players")
-local RunService = game:GetService("RunService")
-local Workspace = game:GetService("Workspace")
-local StarterGui = game:GetService("StarterGui")
-local UserInputService = game:GetService("UserInputService")
-local LocalPlayer = Players.LocalPlayer
-
--- 前置声明
-local CoordDropdown
-local selectedCoord = ""
-
--- 坐标存储 {name = Vector3}
-local SavedCoords = {}
-local coordCounter = 0
-
--- ============================================================
--- 通用辅助函数
--- ============================================================
-local function notify(title, text, duration)
-	duration = duration or 3
-	pcall(function()
-		StarterGui:SetCore("SendNotification", {
-			Title = title,
-			Text = text,
-			Duration = duration
-		})
-	end)
-end
-
-local function getCharacter()
-	return LocalPlayer.Character
-end
-
-local function getRootPart()
-	local char = getCharacter()
-	if char then
-		return char:FindFirstChild("HumanoidRootPart") or char.PrimaryPart
-	end
-end
-
-local function getHumanoid()
-	local char = getCharacter()
-	if char then
-		return char:FindFirstChildOfClass("Humanoid")
-	end
-end
-
--- 刷新坐标下拉列表
-local function refreshCoordDropdown()
-	local names = {}
-	for name in pairs(SavedCoords) do
-		table.insert(names, name)
-	end
-	table.sort(names)
-	if CoordDropdown then
-		CoordDropdown:SetValues(names)
-	end
-end
-
--- ============================================================
--- 1. 坐标管理
--- ============================================================
-local CoordGroup = Tabs_Tools:AddLeftGroupbox("坐标管理")
-
--- 自动命名保存当前坐标
-CoordGroup:AddButton("保存当前坐标", function()
-	local root = getRootPart()
-	if not root then
-		notify("坐标", "未找到角色", 3)
-		return
-	end
-	coordCounter = coordCounter + 1
-	local name = "coord" .. coordCounter
-	SavedCoords[name] = root.Position
-	notify("坐标保存", name .. " 已保存: " .. tostring(root.Position), 3)
-	refreshCoordDropdown()
-end)
-
--- 自定义名称保存
-local customCoordInput = CoordGroup:AddInput("CustomCoordName", {
-	Text = "自定义坐标名",
-	Default = "",
-	Numeric = false
-})
-
-local customCoordName = ""
-customCoordInput:OnChanged(function(text)
-	customCoordName = text or ""
-end)
-
-CoordGroup:AddButton("保存自定义坐标", function()
-	local root = getRootPart()
-	if not root then
-		notify("坐标", "未找到角色", 3)
-		return
-	end
-	local name = customCoordName
-	if not name or name == "" then
-		notify("坐标", "请输入坐标名称", 3)
-		return
-	end
-	SavedCoords[name] = root.Position
-	notify("坐标保存", name .. " 已保存", 3)
-	refreshCoordDropdown()
-end)
-
-CoordGroup:AddLabel("已保存坐标列表")
-
-CoordDropdown = CoordGroup:AddDropdown("CoordList", {
-	Text = "坐标列表",
-	Values = {},
-	Default = "",
-	Multi = false
-})
-
-CoordDropdown:OnChanged(function(v)
-	selectedCoord = v
-end)
-
-CoordGroup:AddButton("传送到选中坐标", function()
-	if selectedCoord == "" or not SavedCoords[selectedCoord] then
-		notify("传送", "请选择有效坐标", 3)
-		return
-	end
-	local root = getRootPart()
-	if not root then
-		notify("传送", "未找到角色", 3)
-		return
-	end
-	root.CFrame = CFrame.new(SavedCoords[selectedCoord])
-	notify("传送", "已传送到 " .. selectedCoord, 3)
-end)
-
--- 循环传送开关
-local loopTeleport = false
-local loopConn = nil
-CoordGroup:AddToggle("LoopTeleport", {
-	Text = "循环传送选中坐标",
-	Default = false
-}):OnChanged(function(v)
-	loopTeleport = v
-	if v then
-		notify("循环传送", "已开启循环传送", 3)
-		pcall(function()
-			if loopConn then loopConn:Disconnect() end
-			loopConn = RunService.Heartbeat:Connect(function()
-				if loopTeleport and selectedCoord ~= "" and SavedCoords[selectedCoord] then
-					local root = getRootPart()
-					if root then
-						root.CFrame = CFrame.new(SavedCoords[selectedCoord])
-					end
-				end
-			end)
-		end)
-	else
-		notify("循环传送", "已关闭循环传送", 3)
-		if loopConn then
-			loopConn:Disconnect()
-			loopConn = nil
-		end
-	end
-end)
-
--- ============================================================
--- 2. 传送工具
--- ============================================================
-local TeleportGroup = Tabs_Tools:AddLeftGroupbox("传送工具")
-
-TeleportGroup:AddButton("点击传送", function()
-	pcall(function()
-		-- 移除已存在的同名工具
-		for _, item in ipairs(LocalPlayer.Backpack:GetChildren()) do
-			if item:IsA("Tool") and item.Name == "[XJW]传送工具" then
-				item:Destroy()
-			end
-		end
-
-		local tool = Instance.new("Tool")
-		tool.Name = "[XJW]传送工具"
-		tool.RequiresHandle = false
-		tool.ToolTip = "点击任意位置传送"
-		tool.Parent = LocalPlayer.Backpack
-
-		tool.Activated:Connect(function()
-			local root = getRootPart()
-			local char = getCharacter()
-			if not root or not char then return end
-
-			local mouse = LocalPlayer:GetMouse()
-			local rayParams = RaycastParams.new()
-			rayParams.FilterDescendantsInstances = { char }
-			rayParams.FilterType = Enum.RaycastFilterType.Exclude
-
-			local origin = mouse.UnitRay.Origin
-			local direction = mouse.UnitRay.Direction * 1000
-			local result = Workspace:Raycast(origin, direction, rayParams)
-
-			if result then
-				root.CFrame = CFrame.new(result.Position + Vector3.new(0, 3, 0))
-				notify("传送", "已传送到点击位置", 2)
-			else
-				root.CFrame = mouse.Hit
-				notify("传送", "已传送到点击位置", 2)
-			end
-		end)
-
-		notify("传送工具", "[XJW]传送工具 已创建，装备后点击传送", 4)
-	end)
-end)
-
--- ============================================================
--- 3. 坐标工具
--- ============================================================
-local CoordToolGroup = Tabs_Tools:AddRightGroupbox("坐标工具")
-
--- 保存所有坐标到文件
-CoordToolGroup:AddButton("保存坐标到文件", function()
-	pcall(function()
-		local data = {}
-		for name, pos in pairs(SavedCoords) do
-			table.insert(data, string.format('["%s"] = Vector3.new(%f, %f, %f)', name, pos.X, pos.Y, pos.Z))
-		end
-		local content = "return {\n  " .. table.concat(data, ",\n  ") .. "\n}"
-		writefile("SavedCoords.txt", content)
-		setclipboard(content)
-		notify("坐标", "已保存到文件并复制到剪贴板", 4)
-	end)
-end)
-
--- 删除选中坐标
-CoordToolGroup:AddButton("删除选中坐标", function()
-	if selectedCoord == "" or not SavedCoords[selectedCoord] then
-		notify("坐标", "请选择有效坐标", 3)
-		return
-	end
-	SavedCoords[selectedCoord] = nil
-	notify("坐标", "已删除 " .. selectedCoord, 3)
-	refreshCoordDropdown()
-end)
-
--- 删除全部坐标
-CoordToolGroup:AddButton("删除全部坐标", function()
-	SavedCoords = {}
-	coordCounter = 0
-	selectedCoord = ""
-	refreshCoordDropdown()
-	notify("坐标", "已删除全部坐标", 3)
-end)
-
--- 复制当前坐标
-CoordToolGroup:AddButton("复制当前坐标", function()
-	local root = getRootPart()
-	if not root then
-		notify("坐标", "未找到角色", 3)
-		return
-	end
-	local pos = root.Position
-	local text = string.format("%f, %f, %f", pos.X, pos.Y, pos.Z)
-	setclipboard(text)
-	notify("坐标", "当前坐标已复制: " .. text, 4)
-end)
-
--- ============================================================
--- 4. 美化包
--- ============================================================
-local BeautifyGroup = Tabs_Tools:AddRightGroupbox("美化包")
-
--- 删除所有饰品
-local function deleteAccessories(char)
-	char = char or getCharacter()
-	if not char then return end
-	for _, v in ipairs(char:GetChildren()) do
-		if v:IsA("Accessory") then
-			pcall(function() v:Destroy() end)
-		end
-	end
-end
-
--- 删除所有饰品和衣服
-local function deleteAccessoriesAndClothes(char)
-	char = char or getCharacter()
-	if not char then return end
-	for _, v in ipairs(char:GetChildren()) do
-		if v:IsA("Accessory") or v:IsA("Shirt") or v:IsA("Pants") or v:IsA("ShirtGraphic") or v:IsA("BodyColors") then
-			pcall(function() v:Destroy() end)
-		end
-	end
-	for _, v in ipairs(char:GetDescendants()) do
-		if v:IsA("Decal") or v:IsA("Texture") then
-			pcall(function() v:Destroy() end)
-		end
-	end
-end
-
--- 角色随机颜色
-local function randomColor(char)
-	char = char or getCharacter()
-	if not char then return end
-	for _, v in ipairs(char:GetChildren()) do
-		if v:IsA("BasePart") then
-			pcall(function()
-				v.BrickColor = BrickColor.Random()
-				v.Color = Color3.new(math.random(), math.random(), math.random())
-			end)
-		end
-	end
-end
-
-BeautifyGroup:AddButton("删除所有饰品", function()
-	deleteAccessories()
-	notify("美化", "已删除所有饰品", 3)
-end)
-
--- 重生自动删除开关
-local autoDeleteOnRespawn = false
-BeautifyGroup:AddToggle("AutoDeleteOnRespawn", {
-	Text = "重生自动删除饰品和衣服",
-	Default = false
-}):OnChanged(function(v)
-	autoDeleteOnRespawn = v
-	notify("美化", v and "已开启重生自动删除" or "已关闭重生自动删除", 3)
-end)
-
-BeautifyGroup:AddButton("删除所有饰品和衣服", function()
-	deleteAccessoriesAndClothes()
-	notify("美化", "已删除所有饰品和衣服", 3)
-end)
-
--- 角色随机颜色
-BeautifyGroup:AddButton("角色随机颜色", function()
-	randomColor()
-	notify("美化", "已应用随机颜色", 3)
-end)
-
-local autoColorOnRespawn = false
-BeautifyGroup:AddToggle("AutoColorOnRespawn", {
-	Text = "重生自动应用随机颜色",
-	Default = false
-}):OnChanged(function(v)
-	autoColorOnRespawn = v
-	notify("美化", v and "已开启重生随机颜色" or "已关闭重生随机颜色", 3)
-end)
-
--- 彩虹角色开关
-local rainbowOn = false
-local rainbowConn = nil
-BeautifyGroup:AddToggle("RainbowCharacter", {
-	Text = "彩虹角色 (Neon循环变色)",
-	Default = false
-}):OnChanged(function(v)
-	rainbowOn = v
-	if v then
-		notify("美化", "已开启彩虹角色", 3)
-		local hue = 0
-		pcall(function()
-			if rainbowConn then rainbowConn:Disconnect() end
-			rainbowConn = RunService.Heartbeat:Connect(function()
-				if not rainbowOn then return end
-				hue = hue + 0.005
-				if hue > 1 then hue = 0 end
-				local color = Color3.fromHSV(hue, 1, 1)
-				local char = getCharacter()
-				if char then
-					for _, part in ipairs(char:GetChildren()) do
-						if part:IsA("BasePart") then
-							pcall(function()
-								part.Color = color
-								part.Material = Enum.Material.Neon
-							end)
-						end
-					end
-				end
-			end)
-		end)
-	else
-		notify("美化", "已关闭彩虹角色", 3)
-		if rainbowConn then
-			rainbowConn:Disconnect()
-			rainbowConn = nil
-		end
-		-- 恢复材质
-		local char = getCharacter()
-		if char then
-			for _, part in ipairs(char:GetChildren()) do
-				if part:IsA("BasePart") then
-					pcall(function() part.Material = Enum.Material.Plastic end)
-				end
-			end
-		end
-	end
-end)
-
--- 断腿开关 (右腿 korblox)
-local brokenLegOn = false
-local function applyKorblox(char)
-	char = char or getCharacter()
-	if not char then return end
-	local rightLeg = char:FindFirstChild("Right Leg") or char:FindFirstChild("RightLeg")
-	if not rightLeg then return end
-	local existing = rightLeg:FindFirstChildOfClass("SpecialMesh")
-	if existing then existing:Destroy() end
-	local mesh = Instance.new("SpecialMesh")
-	mesh.MeshId = "rbxassetid://6658418826"
-	mesh.TextureId = "rbxassetid://6658420819"
-	mesh.Scale = Vector3.new(1, 1, 1)
-	mesh.VertexColor = Vector3.new(1, 1, 1)
-	mesh.Parent = rightLeg
-end
-
-local function removeKorblox(char)
-	char = char or getCharacter()
-	if not char then return end
-	local rightLeg = char:FindFirstChild("Right Leg") or char:FindFirstChild("RightLeg")
-	if not rightLeg then return end
-	local mesh = rightLeg:FindFirstChildOfClass("SpecialMesh")
-	if mesh then mesh:Destroy() end
-end
-
-BeautifyGroup:AddToggle("BrokenLeg", {
-	Text = "断腿 (Korblox右腿)",
-	Default = false
-}):OnChanged(function(v)
-	brokenLegOn = v
-	if v then
-		applyKorblox()
-		notify("美化", "已应用断腿", 3)
-	else
-		removeKorblox()
-		notify("美化", "已恢复右腿", 3)
-	end
-end)
-
--- 无头开关
-local headlessOn = false
-local originalHeadTransparency = 0
-BeautifyGroup:AddToggle("Headless", {
-	Text = "无头 (头部透明)",
-	Default = false
-}):OnChanged(function(v)
-	headlessOn = v
-	local char = getCharacter()
-	if not char then return end
-	local head = char:FindFirstChild("Head")
-	if not head then return end
-	if v then
-		originalHeadTransparency = head.Transparency
-		pcall(function()
-			head.Transparency = 1
-			for _, d in ipairs(head:GetChildren()) do
-				if d:IsA("Decal") or d:IsA("Texture") then
-					d:Destroy()
-				end
-			end
-		end)
-		notify("美化", "已应用无头", 3)
-	else
-		pcall(function()
-			head.Transparency = originalHeadTransparency
-		end)
-		notify("美化", "已恢复头部", 3)
-	end
-end)
-
--- 重生事件处理 (自动删除 / 自动颜色)
-LocalPlayer.CharacterAdded:Connect(function(char)
-	task.wait(0.5)
-	if autoDeleteOnRespawn then
-		deleteAccessoriesAndClothes(char)
-	end
-	if autoColorOnRespawn then
-		randomColor(char)
-	end
-	if brokenLegOn then
-		applyKorblox(char)
-	end
-	if headlessOn then
-		pcall(function()
-			local head = char:FindFirstChild("Head")
-			if head then
-				originalHeadTransparency = head.Transparency
-				head.Transparency = 1
-				for _, d in ipairs(head:GetChildren()) do
-					if d:IsA("Decal") or d:IsA("Texture") then
-						d:Destroy()
-					end
-				end
-			end
-		end)
-	end
-end)
-
--- ============================================================
--- 6. 动作功能
--- ============================================================
-local ActionGroup = Tabs_Tools:AddLeftGroupbox("动作功能")
-
-ActionGroup:AddButton("R6动作包", function()
-	pcall(function()
-		safeLoad("https://raw.githubusercontent.com/GreenNumber42/Roblox-Scripts/main/R6Animations.lua")
-	end)
-	notify("动作", "正在加载R6动作包", 3)
-end)
-
-ActionGroup:AddButton("动作V2", function()
-	pcall(function()
-		safeLoad("https://raw.githubusercontent.com/GreenNumber42/Roblox-Scripts/main/EmotesV2.lua")
-	end)
-	notify("动作", "正在加载动作V2", 3)
-end)
-
-ActionGroup:AddLabel("播放自定义动画")
-
-local animIdInput = ActionGroup:AddInput("PlayAnimID", {
-	Text = "动画ID",
-	Default = "",
-	Numeric = true
-})
-
-local playAnimID = ""
-animIdInput:OnChanged(function(text)
-	playAnimID = text or ""
-end)
-
-ActionGroup:AddButton("播放动画", function()
-	local id = tonumber(playAnimID)
-	if not id then
-		notify("动画", "请输入有效动画ID", 3)
-		return
-	end
-	pcall(function()
-		local humanoid = getHumanoid()
-		local char = getCharacter()
-		if not humanoid or not char then
-			notify("动画", "未找到角色", 3)
-			return
-		end
-		local animator = humanoid:FindFirstChildOfClass("Animator")
-		if not animator then
-			animator = char:FindFirstChildOfClass("Animator")
-		end
-		if not animator then
-			animator = humanoid:FindFirstChild("Animator")
-		end
-		if not animator then
-			animator = Instance.new("Animator")
-			animator.Parent = humanoid
-		end
-		local anim = Instance.new("Animation")
-		anim.AnimationId = "rbxassetid://" .. tostring(id)
-		local track = animator:LoadAnimation(anim)
-		track:Play()
-		notify("动画", "正在播放动画 " .. id, 3)
-	end)
-end)
-end -- 工具标签页 do...end
-
--- 服务器功能
-local Tabs_Server = Window:AddTab("服务器功能", "server")
-local ServerBox = Tabs_Server:AddLeftGroupbox("游戏脚本")
-ServerBox:AddButton("养大一只鸡战士", function()
-    safeLoad("https://raw.githubusercontent.com/30124OAO/yi/main/yangdayizhiji")
-end)
-ServerBox:AddButton("忍者传奇", function()
-    safeLoad("https://raw.githubusercontent.com/jiuyijiuyijiuyi91/78789191/refs/heads/main/%E5%BF%8D%E8%80%85%E4%BC%A0%E5%A5%87XJW.lua")
-end)
-ServerBox:AddButton("力量传奇（安脚本）", function()
-    loadstring(game:HttpGet("https://raw.githubusercontent.com/Anscripterato/QQ2134702438/refs/heads/main/byato/AnScript/atoscript"))()
-end)
--- 新增 极速传奇
-ServerBox:AddButton("极速传奇", function()
-    loadstring(game:HttpGet("https://raw.githubusercontent.com/jiuyijiuyijiuyi91/78789191/refs/heads/main/XJW%E6%9E%81%E9%80%9F%E4%BC%A0%E5%A5%87.lua"))()
-end)
-
--- UI设置
-Tabs["UI Settings"] = Window:AddTab("UI设置", "settings")
-
-ThemeManager:SetLibrary(Library)
-SaveManager:SetLibrary(Library)
-
-SaveManager:IgnoreThemeSettings()
-SaveManager:SetIgnoreIndexes({ "MenuKeybind" })
-SaveManager:SetFolder("UniversalSilentAim/Configs")
-
-SaveManager:BuildConfigSection(Tabs["UI Settings"])
-ThemeManager:ApplyToTab(Tabs["UI Settings"])
-
-SaveManager:LoadAutoloadConfig()
-
--- 启动成功通知
-local _elapsed = tick() - _startTime
-local _msg = string.format("耗时 %.2f 秒", _elapsed)
-pcall(function()
-    game.StarterGui:SetCore("SendNotification", {
-        Title = "XJW中心加载成功",
-        Text = _msg,
-        Duration = 5,
-    })
-end)
+            if optimizeOriginal.StreamingTargetRadius then workspace.StreamingTargetRad
