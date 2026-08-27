@@ -1,6 +1,6 @@
 local repo = "https://raw.githubusercontent.com/ATLASTEAM01/Obsidian/main/"
 local _startTime = tick()
-local _lastUpdate = "2026年8月27日18时07分" -- ✅ 更新时间
+local _lastUpdate = "2026年8月27日18时07分"
 
 -- 安全加载函数
 local function safeLoad(url)
@@ -31,10 +31,10 @@ local Tabs = {
 
 -- 公告
 local AnnouncementBox = Tabs.Announcement:AddLeftGroupbox("公告")
-AnnouncementBox:AddLabel("本脚本是缝合脚本（有一些自制功能）") -- ✅ 修改
+AnnouncementBox:AddLabel("本脚本是缝合脚本（有一些自制功能）")
 AnnouncementBox:AddLabel("作者B站UID: 3706985503525348")
 AnnouncementBox:AddLabel("脚本会持续更新，永久免费")
-AnnouncementBox:AddLabel("更新时间: " .. _lastUpdate) -- ✅ 使用更新后的变量
+AnnouncementBox:AddLabel("更新时间: " .. _lastUpdate)
 
 -- 信息功能
 local InfoBox = Tabs.Announcement:AddLeftGroupbox("信息")
@@ -1592,10 +1592,6 @@ if BSplayerCountText then
     BSplayerCountText.Outline = true
     BSplayerCountText.OutlineColor = Color3.new(0, 0, 0)
 end
-BSplayerCountText.Visible = false
-BSplayerCountText.Size = 20BSplayerCountText.Font = Drawing.Fonts.Monospace
-BSplayerCountText.Outline = true
-BSplayerCountText.OutlineColor = Color3.new(0, 0, 0)
 
 local BSfovCircle
 pcall(function()
@@ -2531,4 +2527,14 @@ local function applyOptimization()
 
     -- 禁用所有粒子特效
     disabledParticles = {}
-    for _, obj in ipairs(workspace:GetDescend
+    for _, obj in ipairs(workspace:GetDescendants()) do
+        if obj:IsA("ParticleEmitter") or obj:IsA("Trail") or obj:IsA("Beam") then
+            if obj.Enabled then
+                table.insert(disabledParticles, obj)
+                obj.Enabled = false
+            end
+        end
+    end
+end
+
+local function res
