@@ -2528,4 +2528,4 @@ local function restoreOptimization()
     end
     pcall(function()
         if workspace.StreamingEnabled then
-            if optimizeOriginal.StreamingTargetRadius then workspace.StreamingTargetRad
+            if optimizeOriginal.StreamingTargetRadius then workspace.StreamingTargetRadius = optimizeOriginal.StreamingTargetRad
