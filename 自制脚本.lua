@@ -3286,6 +3286,10 @@ end)
 ServerBox:AddButton("极速传奇", function()
     loadstring(game:HttpGet("https://raw.githubusercontent.com/jiuyijiuyijiuyi91/78789191/refs/heads/main/XJW%E6%9E%81%E9%80%9F%E4%BC%A0%E5%A5%87.lua"))()
 end)
+-- 新增 英雄时代
+ServerBox:AddButton("英雄时代", function()
+    loadstring(game:HttpGet("https://raw.githubusercontent.com/jiuyijiuyijiuyi91/78789191/refs/heads/main/%E8%8B%B1%E9%9B%84%E6%97%B6%E4%BB%A3.lua"))()
+end)
 
 -- UI设置
 Tabs["UI Settings"] = Window:AddTab("UI设置", "settings")
