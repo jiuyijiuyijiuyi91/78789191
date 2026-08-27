@@ -6,8 +6,6 @@ local Workspace = game:GetService("Workspace")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local LocalPlayer = Players.LocalPlayer
 local Camera = Workspace.CurrentCamera
-local VirtualUser = game:GetService("VirtualUser")
-local UIS = game:GetService("UserInputService")
 
 local Window = WindUI:CreateWindow({
     Title = "XJW",
@@ -19,6 +17,7 @@ local Window = WindUI:CreateWindow({
     HideSearchBar = false,
 })
 
+-- 时间标签
 local TimeTag = Window:Tag({
     Title = "00:00",
     Color = Color3.fromRGB(255, 255, 255)
@@ -52,77 +51,28 @@ Window:EditOpenButton({
     Draggable = true,
 })
 
--- ==================== 行为伪装反检测（不hook任何东西） ====================
--- 1. 防挂机（最安全）
+-- ==================== 反作弊绕过 ====================
 pcall(function()
+    local VirtualUser = game:GetService("VirtualUser")
     LocalPlayer.Idled:Connect(function()
         VirtualUser:CaptureController()
         VirtualUser:ClickButton2(Vector2.new())
     end)
 end)
 
--- 2. 模拟鼠标微动（让服务器以为你在操作）
-pcall(function()
-    task.spawn(function()
-        while true do
-            if autoAttackEnabled or policeLoopEnabled then
-                pcall(function()
-                    UIS.MouseBehavior = Enum.MouseBehavior.Default
-                end)
-            end
-            task.wait(math.random(5, 15))
-        end
-    end)
-end)
-
--- 3. 模拟随机按键（让服务器以为你是真人）
-pcall(function()
-    local keys = {Enum.KeyCode.W, Enum.KeyCode.A, Enum.KeyCode.S, Enum.KeyCode.D}
-    task.spawn(function()
-        while true do
-            if autoAttackEnabled or policeLoopEnabled then
-                local key = keys[math.random(#keys)]
-                pcall(function()
-                    UIS:SetKeyDown(key)
-                    task.wait(0.05 + math.random() * 0.1)
-                    UIS:SetKeyUp(key)
-                end)
-            end
-            task.wait(math.random(8, 25))
-        end
-    end)
-end)
-
--- 4. 定期随机小停顿（更像真人）
-pcall(function()
-    task.spawn(function()
-        while true do
-            task.wait(math.random(30, 90))
-            if autoAttackEnabled then
-                pcall(function()
-                    task.wait(math.random(1, 3))
-                end)
-            end
-        end
-    end)
-end)
-
-print("[行为伪装] 已加载（无hook，安全）")
-
 -- ==================== 配置 ====================
-local ATTACK_SPEED = 0.28
-local ATTACK_RANDOM_DELAY = 0.06
-local ATTACK_BURST_COUNT = 2
-local ATTACK_BURST_WAIT = 1.2
-local autoAttackEnabled = false
+local ATTACK_SPEED = 0.15
+local constantAttackEnabled = false
 local playerEspEnabled = false
 local policeEspEnabled = false
+local civilianEspEnabled = false
+local thugEspEnabled = false
 local civilianLoopEnabled = false
 local policeLoopEnabled = false
+local thugLoopEnabled = false
 local currentPolice = nil
-local attackTimer = 0
-local burstCounter = 0
-local burstTimer = 0
+local currentCivilian = nil
+local currentThug = nil
 
 -- ==================== 传送基础函数 ====================
 local CITY_SAFEZONE = Vector3.new(-242.419418, 94.108253, 99.990486)
@@ -141,6 +91,7 @@ local function teleportToPart(part)
     teleportTo(part.Position)
 end
 
+-- ==================== 传送到敌人背后 ====================
 local function teleportBehind(part)
     if not part then return end
     local char = LocalPlayer.Character
@@ -153,6 +104,7 @@ local function teleportBehind(part)
     root.CFrame = CFrame.new(behindPos)
 end
 
+-- ==================== 人物模型锁定到目标背后 ====================
 local function lockCharacterBehind(targetRoot)
     if not targetRoot then return end
     local char = LocalPlayer.Character
@@ -163,17 +115,23 @@ local function lockCharacterBehind(targetRoot)
     root.CFrame = CFrame.new(root.Position, root.Position + direction)
 end
 
+-- ==================== 平民传送（路径：workspace:GetChildren()[71]） ====================
 local function teleportCivilian()
-    local civilian = Workspace:FindFirstChild("Civilian")
-    if not civilian then return false end
-    local root = civilian:FindFirstChild("HumanoidRootPart") or civilian:FindFirstChild("Torso") or civilian:FindFirstChild("UpperTorso")
-    if root then
-        teleportToPart(root)
-        return true
+    local children = Workspace:GetChildren()
+    if #children >= 71 then
+        local target = children[71]
+        if target then
+            local root = target:FindFirstChild("HumanoidRootPart") or target:FindFirstChild("Torso") or target:FindFirstChild("UpperTorso")
+            if root then
+                teleportToPart(root)
+                return true
+            end
+        end
     end
     return false
 end
 
+-- ==================== 警察传送 ====================
 local function teleportPolice()
     local police = Workspace:FindFirstChild("Police")
     if not police then return false end
@@ -185,6 +143,45 @@ local function teleportPolice()
     return false
 end
 
+-- ==================== 暴徒传送（路径：workspace:GetChildren()[82]） ====================
+local function teleportThug()
+    local children = Workspace:GetChildren()
+    if #children >= 82 then
+        local target = children[82]
+        if target then
+            local root = target:FindFirstChild("HumanoidRootPart") or target:FindFirstChild("Torso") or target:FindFirstChild("UpperTorso")
+            if root then
+                teleportToPart(root)
+                return true
+            end
+        end
+    end
+    return false
+end
+
+-- ==================== 获取所有平民（用于循环传送和透视） ====================
+local function getAllCivilians()
+    local list = {}
+    for _, v in ipairs(Workspace:GetChildren()) do
+        if v:IsA("Model") and v.Name == "Civilian" then
+            table.insert(list, v)
+        end
+    end
+    return list
+end
+
+-- ==================== 获取所有暴徒（用于循环传送和透视） ====================
+local function getAllThugs()
+    local list = {}
+    for _, v in ipairs(Workspace:GetChildren()) do
+        if v:IsA("Model") and v.Name == "Thug" then
+            table.insert(list, v)
+        end
+    end
+    return list
+end
+
+-- ==================== 获取最近的警察（锁定机制） ====================
 local function GetNearestPolice()
     if currentPolice and currentPolice.Parent then
         local hum = currentPolice:FindFirstChildOfClass("Humanoid")
@@ -220,6 +217,79 @@ local function GetNearestPolice()
     return nearest
 end
 
+-- ==================== 获取最近的平民（锁定机制） ====================
+local function GetNearestCivilian()
+    if currentCivilian and currentCivilian.Parent then
+        local hum = currentCivilian:FindFirstChildOfClass("Humanoid")
+        if hum and hum.Health > 0 then
+            return currentCivilian
+        end
+    end
+
+    local char = LocalPlayer.Character
+    local root = char and char:FindFirstChild("HumanoidRootPart")
+    if not root then return nil end
+
+    local nearest = nil
+    local nearestDist = math.huge
+
+    for _, child in ipairs(Workspace:GetChildren()) do
+        if child:IsA("Model") and child.Name == "Civilian" then
+            local hum = child:FindFirstChildOfClass("Humanoid")
+            if hum and hum.Health > 0 then
+                local npcRoot = child:FindFirstChild("HumanoidRootPart") or child:FindFirstChild("Torso")
+                if npcRoot then
+                    local dist = (npcRoot.Position - root.Position).Magnitude
+                    if dist < nearestDist then
+                        nearestDist = dist
+                        nearest = child
+                    end
+                end
+            end
+        end
+    end
+
+    currentCivilian = nearest
+    return nearest
+end
+
+-- ==================== 获取最近的暴徒（锁定机制） ====================
+local function GetNearestThug()
+    if currentThug and currentThug.Parent then
+        local hum = currentThug:FindFirstChildOfClass("Humanoid")
+        if hum and hum.Health > 0 then
+            return currentThug
+        end
+    end
+
+    local char = LocalPlayer.Character
+    local root = char and char:FindFirstChild("HumanoidRootPart")
+    if not root then return nil end
+
+    local nearest = nil
+    local nearestDist = math.huge
+
+    for _, child in ipairs(Workspace:GetChildren()) do
+        if child:IsA("Model") and child.Name == "Thug" then
+            local hum = child:FindFirstChildOfClass("Humanoid")
+            if hum and hum.Health > 0 then
+                local npcRoot = child:FindFirstChild("HumanoidRootPart") or child:FindFirstChild("Torso")
+                if npcRoot then
+                    local dist = (npcRoot.Position - root.Position).Magnitude
+                    if dist < nearestDist then
+                        nearestDist = dist
+                        nearest = child
+                    end
+                end
+            end
+        end
+    end
+
+    currentThug = nearest
+    return nearest
+end
+
+-- ==================== 警察循环传送 ====================
 local function startPoliceLoop()
     if policeLoopEnabled then return end
     policeLoopEnabled = true
@@ -245,24 +315,62 @@ local function stopPoliceLoop()
     currentPolice = nil
 end
 
+-- ==================== 平民循环传送 ====================
 local function startCivilianLoop()
     if civilianLoopEnabled then return end
     civilianLoopEnabled = true
+    currentCivilian = nil
+
     task.spawn(function()
         while civilianLoopEnabled do
-            local civilian = Workspace:FindFirstChild("Civilian")
-            if civilian then
-                local root = civilian:FindFirstChild("HumanoidRootPart") or civilian:FindFirstChild("Torso") or civilian:FindFirstChild("UpperTorso")
-                if root then teleportToPart(root) end
+            local target = GetNearestCivilian()
+            if target then
+                local part = target:FindFirstChild("HumanoidRootPart") or target:FindFirstChild("Torso")
+                if part then
+                    teleportBehind(part)
+                    lockCharacterBehind(part)
+                end
             end
-            task.wait(0.8)
+            task.wait(0.02)
         end
     end)
 end
 
 local function stopCivilianLoop()
     civilianLoopEnabled = false
+    currentCivilian = nil
 end
+
+-- ==================== 暴徒循环传送 ====================
+local function startThugLoop()
+    if thugLoopEnabled then return end
+    thugLoopEnabled = true
+    currentThug = nil
+
+    task.spawn(function()
+        while thugLoopEnabled do
+            local target = GetNearestThug()
+            if target then
+                local part = target:FindFirstChild("HumanoidRootPart") or target:FindFirstChild("Torso")
+                if part then
+                    teleportBehind(part)
+                    lockCharacterBehind(part)
+                end
+            end
+            task.wait(0.02)
+        end
+    end)
+end
+
+local function stopThugLoop()
+    thugLoopEnabled = false
+    currentThug = nil
+end
+
+-- ==================== 一直攻击（不管有没有敌人） ====================
+local attackTimer = 0
+local burstCounter = 0
+local burstTimer = 0
 
 local function sendPunch()
     local char = LocalPlayer.Character
@@ -271,48 +379,47 @@ local function sendPunch()
     local hum = char:FindFirstChildOfClass("Humanoid")
     if not hum or hum.Health <= 0 then return end
 
-    local target = GetNearestPolice()
-    if not target then return end
+    -- 爆发攻击模式（防检测）
+    if tick() - burstTimer > 0.8 then
+        burstCounter = 0
+    end
 
-    local root = char:FindFirstChild("HumanoidRootPart") or char:FindFirstChild("Torso")
-    if not root then return end
+    if burstCounter >= 2 then
+        return
+    end
 
-    local targetRoot = target:FindFirstChild("HumanoidRootPart") or target:FindFirstChild("Torso")
-    if not targetRoot then return end
+    -- 随机延迟（防检测）
+    if tick() - attackTimer < ATTACK_SPEED + math.random() * 0.05 then
+        return
+    end
 
-    local dist = (targetRoot.Position - root.Position).Magnitude
-    if dist > 12 then return end
-
-    if tick() - burstTimer > ATTACK_BURST_WAIT then burstCounter = 0 end
-    if burstCounter >= ATTACK_BURST_COUNT then return end
-
-    local randomDelay = math.random() * ATTACK_RANDOM_DELAY
-    if tick() - attackTimer < ATTACK_SPEED + randomDelay then return end
-
+    -- 执行攻击
     ReplicatedStorage:WaitForChild("Events"):WaitForChild("Punch"):FireServer(0, 0.1, 1)
 
     attackTimer = tick()
     burstCounter = burstCounter + 1
-    if burstCounter >= ATTACK_BURST_COUNT then burstTimer = tick() end
+    if burstCounter >= 2 then
+        burstTimer = tick()
+    end
 end
 
-local function startAutoAttack()
-    if autoAttackEnabled then return end
-    autoAttackEnabled = true
+local function startConstantAttack()
+    if constantAttackEnabled then return end
+    constantAttackEnabled = true
     attackTimer = 0
     burstCounter = 0
     burstTimer = 0
 
     task.spawn(function()
-        while autoAttackEnabled do
+        while constantAttackEnabled do
             pcall(sendPunch)
             task.wait(0.05)
         end
     end)
 end
 
-local function stopAutoAttack()
-    autoAttackEnabled = false
+local function stopConstantAttack()
+    constantAttackEnabled = false
 end
 
 -- ==================== 警察透视 ====================
@@ -373,14 +480,12 @@ local function updatePoliceEsp()
     for _, child in ipairs(Workspace:GetChildren()) do
         if child:IsA("Model") and child.Name == "Police" then
             if not policeEspObjects[child] then createPoliceEsp(child) end
-
             local obj = policeEspObjects[child]
             if obj then
                 local root = child:FindFirstChild("HumanoidRootPart") or child:FindFirstChild("Torso") or child:FindFirstChild("UpperTorso")
                 if root then
                     local pos, onScreen = Camera:WorldToViewportPoint(root.Position)
                     local dist = (root.Position - charRoot.Position).Magnitude
-
                     if onScreen then
                         local size = 60 / pos.Z
                         obj.box.Size = Vector2.new(size * 1.5, size * 2.5)
@@ -407,44 +512,50 @@ local function updatePoliceEsp()
     end
 end
 
--- ==================== 玩家透视 ====================
-local playerEspObjects = {}
+-- ==================== 平民透视 ====================
+local civilianEspObjects = {}
 
-local function createPlayerEsp(player)
-    if playerEspObjects[player] or player == LocalPlayer then return end
+local function createCivilianEsp(civilian)
+    if civilianEspObjects[civilian] then return end
+    local root = civilian:FindFirstChild("HumanoidRootPart") or civilian:FindFirstChild("Torso") or civilian:FindFirstChild("UpperTorso")
+    if not root then return end
+
     local box = Drawing.new("Square")
     box.Visible = false
-    box.Color = Color3.fromRGB(255, 0, 0)
+    box.Color = Color3.fromRGB(0, 255, 100)
     box.Thickness = 2
-    box.Filled = true
-    box.Transparency = 0.3
+    box.Filled = false
+    box.Transparency = 0.5
+
     local line = Drawing.new("Line")
     line.Visible = false
-    line.Color = Color3.fromRGB(255, 0, 0)
+    line.Color = Color3.fromRGB(0, 255, 100)
     line.Thickness = 1.5
+
     local nameText = Drawing.new("Text")
     nameText.Visible = false
-    nameText.Color = Color3.fromRGB(255, 0, 0)
+    nameText.Color = Color3.fromRGB(0, 255, 100)
     nameText.Size = 14
     nameText.Font = Drawing.Fonts.Monospace
     nameText.Outline = true
     nameText.OutlineColor = Color3.new(0, 0, 0)
     nameText.Center = true
-    playerEspObjects[player] = {box = box, line = line, name = nameText}
+
+    civilianEspObjects[civilian] = {box = box, line = line, name = nameText}
 end
 
-local function updatePlayerEsp()
-    for player, obj in pairs(playerEspObjects) do
-        if not Players:FindFirstChild(player.Name) then
+local function updateCivilianEsp()
+    for civilian, obj in pairs(civilianEspObjects) do
+        if not civilian.Parent then
             obj.box:Remove()
             obj.line:Remove()
             obj.name:Remove()
-            playerEspObjects[player] = nil
+            civilianEspObjects[civilian] = nil
         end
     end
 
-    if not playerEspEnabled then
-        for _, obj in pairs(playerEspObjects) do
+    if not civilianEspEnabled then
+        for _, obj in pairs(civilianEspObjects) do
             obj.box.Visible = false
             obj.line.Visible = false
             obj.name.Visible = false
@@ -456,23 +567,111 @@ local function updatePlayerEsp()
     local charRoot = char and (char:FindFirstChild("HumanoidRootPart") or char:FindFirstChild("Torso"))
     if not charRoot then return end
 
-    for _, player in ipairs(Players:GetPlayers()) do
-        if player ~= LocalPlayer then
-            if not playerEspObjects[player] then createPlayerEsp(player) end
-            local obj = playerEspObjects[player]
+    for _, child in ipairs(Workspace:GetChildren()) do
+        if child:IsA("Model") and child.Name == "Civilian" then
+            if not civilianEspObjects[child] then createCivilianEsp(child) end
+            local obj = civilianEspObjects[child]
             if obj then
-                local targetChar = player.Character
-                local root = targetChar and (targetChar:FindFirstChild("HumanoidRootPart") or targetChar:FindFirstChild("Torso") or targetChar:FindFirstChild("UpperTorso"))
-                if root and charRoot then
+                local root = child:FindFirstChild("HumanoidRootPart") or child:FindFirstChild("Torso") or child:FindFirstChild("UpperTorso")
+                if root then
                     local pos, onScreen = Camera:WorldToViewportPoint(root.Position)
                     local dist = (root.Position - charRoot.Position).Magnitude
-
                     if onScreen then
                         local size = 60 / pos.Z
                         obj.box.Size = Vector2.new(size * 1.5, size * 2.5)
                         obj.box.Position = Vector2.new(pos.X - obj.box.Size.X / 2, pos.Y - obj.box.Size.Y / 2)
                         obj.box.Visible = true
-                        obj.name.Text = player.Name .. " [" .. math.floor(dist) .. "m]"
+                        obj.name.Text = "平民 [" .. math.floor(dist) .. "m]"
+                        obj.name.Position = Vector2.new(pos.X, pos.Y - obj.box.Size.Y / 2 - 15)
+                        obj.name.Visible = true
+                        obj.line.From = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y)
+                        obj.line.To = Vector2.new(pos.X, pos.Y)
+                        obj.line.Visible = true
+                    else
+                        obj.box.Visible = false
+                        obj.name.Visible = false
+                        obj.line.Visible = false
+                    end
+                else
+                    obj.box.Visible = false
+                    obj.name.Visible = false
+                    obj.line.Visible = false
+                end
+            end
+        end
+    end
+end
+
+-- ==================== 暴徒透视 ====================
+local thugEspObjects = {}
+
+local function createThugEsp(thug)
+    if thugEspObjects[thug] then return end
+    local root = thug:FindFirstChild("HumanoidRootPart") or thug:FindFirstChild("Torso") or thug:FindFirstChild("UpperTorso")
+    if not root then return end
+
+    local box = Drawing.new("Square")
+    box.Visible = false
+    box.Color = Color3.fromRGB(255, 150, 0)
+    box.Thickness = 2
+    box.Filled = false
+    box.Transparency = 0.5
+
+    local line = Drawing.new("Line")
+    line.Visible = false
+    line.Color = Color3.fromRGB(255, 150, 0)
+    line.Thickness = 1.5
+
+    local nameText = Drawing.new("Text")
+    nameText.Visible = false
+    nameText.Color = Color3.fromRGB(255, 150, 0)
+    nameText.Size = 14
+    nameText.Font = Drawing.Fonts.Monospace
+    nameText.Outline = true
+    nameText.OutlineColor = Color3.new(0, 0, 0)
+    nameText.Center = true
+
+    thugEspObjects[thug] = {box = box, line = line, name = nameText}
+end
+
+local function updateThugEsp()
+    for thug, obj in pairs(thugEspObjects) do
+        if not thug.Parent then
+            obj.box:Remove()
+            obj.line:Remove()
+            obj.name:Remove()
+            thugEspObjects[thug] = nil
+        end
+    end
+
+    if not thugEspEnabled then
+        for _, obj in pairs(thugEspObjects) do
+            obj.box.Visible = false
+            obj.line.Visible = false
+            obj.name.Visible = false
+        end
+        return
+    end
+
+    local char = LocalPlayer.Character
+    local charRoot = char and (char:FindFirstChild("HumanoidRootPart") or char:FindFirstChild("Torso"))
+    if not charRoot then return end
+
+    for _, child in ipairs(Workspace:GetChildren()) do
+        if child:IsA("Model") and child.Name == "Thug" then
+            if not thugEspObjects[child] then createThugEsp(child) end
+            local obj = thugEspObjects[child]
+            if obj then
+                local root = child:FindFirstChild("HumanoidRootPart") or child:FindFirstChild("Torso") or child:FindFirstChild("UpperTorso")
+                if root then
+                    local pos, onScreen = Camera:WorldToViewportPoint(root.Position)
+                    local dist = (root.Position - charRoot.Position).Magnitude
+                    if onScreen then
+                        local size = 60 / pos.Z
+                        obj.box.Size = Vector2.new(size * 1.5, size * 2.5)
+                        obj.box.Position = Vector2.new(pos.X - obj.box.Size.X / 2, pos.Y - obj.box.Size.Y / 2)
+                        obj.box.Visible = true
+                        obj.name.Text = "暴徒 [" .. math.floor(dist) .. "m]"
                         obj.name.Position = Vector2.new(pos.X, pos.Y - obj.box.Size.Y / 2 - 15)
                         obj.name.Visible = true
                         obj.line.From = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y)
@@ -496,11 +695,8 @@ end
 -- ==================== 渲染循环 ====================
 RunService.RenderStepped:Connect(function()
     updatePoliceEsp()
-    updatePlayerEsp()
-end)
-
-Players.PlayerAdded:Connect(function(player)
-    if player ~= LocalPlayer then createPlayerEsp(player) end
+    updateCivilianEsp()
+    updateThugEsp()
 end)
 
 -- ==================== UI ====================
@@ -510,6 +706,7 @@ local Tab = Window:Tab({
     Locked = false,
 })
 
+-- ==================== 传送部分 ====================
 Tab:Section({Title = "传送", TextXAlignment = "Left", TextSize = 17})
 
 Tab:Button({
@@ -517,6 +714,17 @@ Tab:Button({
     Callback = function()
         teleportTo(CITY_SAFEZONE)
         WindUI:Notify({Title = "传送成功", Content = "已传送到城市安全区", Duration = 2})
+    end
+})
+
+Tab:Button({
+    Title = "传送 警察",
+    Callback = function()
+        if teleportPolice() then
+            WindUI:Notify({Title = "传送成功", Content = "已传送到警察", Duration = 2})
+        else
+            WindUI:Notify({Title = "传送失败", Content = "未找到警察", Duration = 2})
+        end
     end
 })
 
@@ -532,17 +740,26 @@ Tab:Button({
 })
 
 Tab:Button({
-    Title = "传送 警察",
+    Title = "传送 暴徒",
     Callback = function()
-        if teleportPolice() then
-            WindUI:Notify({Title = "传送成功", Content = "已传送到警察", Duration = 2})
+        if teleportThug() then
+            WindUI:Notify({Title = "传送成功", Content = "已传送到暴徒", Duration = 2})
         else
-            WindUI:Notify({Title = "传送失败", Content = "未找到警察", Duration = 2})
+            WindUI:Notify({Title = "传送失败", Content = "未找到暴徒", Duration = 2})
         end
     end
 })
 
-Tab:Section({Title = "循环传送", TextXAlignment = "Left", TextSize = 17})
+-- ==================== 循环传送部分 ====================
+Tab:Section({Title = "循环传送（背后+锁定）", TextXAlignment = "Left", TextSize = 17})
+
+Tab:Toggle({
+    Title = "循环传送 警察",
+    Default = false,
+    Callback = function(v)
+        if v then startPoliceLoop() else stopPoliceLoop() end
+    end
+})
 
 Tab:Toggle({
     Title = "循环传送 平民",
@@ -553,13 +770,14 @@ Tab:Toggle({
 })
 
 Tab:Toggle({
-    Title = "循环传送 警察（背后+锁定）",
+    Title = "循环传送 暴徒",
     Default = false,
     Callback = function(v)
-        if v then startPoliceLoop() else stopPoliceLoop() end
+        if v then startThugLoop() else stopThugLoop() end
     end
 })
 
+-- ==================== 透视部分 ====================
 Tab:Section({Title = "透视", TextXAlignment = "Left", TextSize = 17})
 
 Tab:Toggle({
@@ -569,24 +787,31 @@ Tab:Toggle({
 })
 
 Tab:Toggle({
-    Title = "玩家透视（饱满红色）",
+    Title = "平民透视（绿色）",
     Default = false,
-    Callback = function(v) playerEspEnabled = v end
+    Callback = function(v) civilianEspEnabled = v end
 })
 
-Tab:Section({Title = "自动攻击", TextXAlignment = "Left", TextSize = 17})
+Tab:Toggle({
+    Title = "暴徒透视（橙色）",
+    Default = false,
+    Callback = function(v) thugEspEnabled = v end
+})
+
+-- ==================== 一直攻击部分 ====================
+Tab:Section({Title = "一直攻击", TextXAlignment = "Left", TextSize = 17})
 
 Tab:Toggle({
-    Title = "自动攻击（防检测版）",
+    Title = "一直攻击（不管有没有敌人）",
     Default = false,
     Callback = function(v)
-        if v then startAutoAttack() else stopAutoAttack() end
+        if v then startConstantAttack() else stopConstantAttack() end
     end
 })
 
 Tab:Input({
-    Title = "攻击速度(秒) 建议0.25-0.35",
-    Placeholder = "0.28",
+    Title = "攻击速度(秒) 建议0.15-0.3",
+    Placeholder = "0.15",
     Callback = function(val)
         local num = tonumber(val)
         if num and num > 0 then
