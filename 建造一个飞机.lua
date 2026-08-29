@@ -227,16 +227,38 @@ end
 
 -- ================= 加速相关 =================
 local boostSpeed = 150
+local function getSeatPart()
+    local c = player.Character
+    if not c then return nil end
+    local hum = c:FindFirstChildOfClass("Humanoid")
+    if hum and hum.SeatPart then
+        return hum.SeatPart
+    end
+    return nil
+end
+
+-- 目标：玩家坐的飞机座位（飞机本体），没有座位才回退到玩家根部件
+local function getBoostTarget()
+    local seat = getSeatPart()
+    if seat then return seat end
+    return getRoot()
+end
+
 local function boostLoop()
     local bv = Instance.new("BodyVelocity")
     bv.MaxForce = Vector3.new(1e5, 1e5, 1e5)
     while getgenv().BuildAPlaneBoost do
-        local root = getRoot()
-        if root then
-            holdAltitude(root)
-            bv.Velocity = root.CFrame.LookVector * boostSpeed
-            if bv.Parent ~= root then
-                pcall(function() bv.Parent = root end)
+        local target = getBoostTarget()
+        if target then
+            -- 保持高度，防止往下掉进虚空
+            if target.Position.Y < SET.ALTITUDE then
+                local cf = target.CFrame
+                target.CFrame = cf + Vector3.new(0, SET.ALTITUDE - target.Position.Y, 0)
+            end
+            -- 只沿 +X 水平加速（游戏飞行方向），不碰 Y
+            bv.Velocity = Vector3.new(boostSpeed, 0, 0)
+            if bv.Parent ~= target then
+                pcall(function() bv.Parent = target end)
             end
         end
         task.wait(0.1)
