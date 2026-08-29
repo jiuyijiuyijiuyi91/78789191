@@ -3288,6 +3288,9 @@ end)
 ServerBox:AddButton("NPC或死亡", function()
     loadstring(game:HttpGet("https://raw.githubusercontent.com/jiuyijiuyijiuyi91/78789191/refs/heads/main/NPC%E6%88%96%E6%AD%BB%E4%BA%A1.lua"))()
 end)
+ServerBox:AddButton("建造一架飞机", function()
+    loadstring(game:HttpGet("https://raw.githubusercontent.com/jiuyijiuyijiuyi91/78789191/refs/heads/main/%E5%BB%BA%E9%80%A0%E4%B8%80%E4%B8%AA%E9%A3%9E%E6%9C%BA.lua"))()
+end)
 -- UI设置
 Tabs["UI Settings"] = Window:AddTab("UI设置", "settings")
 
