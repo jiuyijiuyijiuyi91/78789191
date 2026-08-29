@@ -1,6 +1,6 @@
 local repo = "https://raw.githubusercontent.com/ATLASTEAM01/Obsidian/main/"
 local _startTime = tick()
-local _lastUpdate = "2026年8月28日2时00分"
+local _lastUpdate = "2026年8月29日2时15分"
 
 -- 安全加载函数
 local function safeLoad(url)
@@ -3290,6 +3290,9 @@ ServerBox:AddButton("NPC或死亡", function()
 end)
 ServerBox:AddButton("建造一架飞机", function()
     loadstring(game:HttpGet("https://raw.githubusercontent.com/jiuyijiuyijiuyi91/78789191/refs/heads/main/%E5%BB%BA%E9%80%A0%E4%B8%80%E4%B8%AA%E9%A3%9E%E6%9C%BA.lua"))()
+end)
+ServerBox:AddButton("[FPS]一键点击", function()
+    loadstring(game:HttpGet("https://raw.githubusercontent.com/jiuyijiuyijiuyi91/78789191/refs/heads/main/FPS%E4%B8%80%E9%94%AE%E7%94%B5%E5%87%BB.lua"))()
 end)
 -- UI设置
 Tabs["UI Settings"] = Window:AddTab("UI设置", "settings")
