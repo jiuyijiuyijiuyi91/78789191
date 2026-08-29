@@ -225,6 +225,25 @@ local function autoBuySelectedLoop(statusTag)
     end
 end
 
+-- ================= 加速相关 =================
+local boostSpeed = 150
+local function boostLoop()
+    local bv = Instance.new("BodyVelocity")
+    bv.MaxForce = Vector3.new(1e5, 1e5, 1e5)
+    while getgenv().BuildAPlaneBoost do
+        local root = getRoot()
+        if root then
+            holdAltitude(root)
+            bv.Velocity = root.CFrame.LookVector * boostSpeed
+            if bv.Parent ~= root then
+                pcall(function() bv.Parent = root end)
+            end
+        end
+        task.wait(0.1)
+    end
+    pcall(function() bv:Destroy() end)
+end
+
 -- ================= UI =================
 local Window = WindUI:CreateWindow({
     Title = "XJW",
@@ -293,6 +312,30 @@ farmSec:Button({
     Callback = function()
         pcall(function() ReturnRemote:FireServer() end)
         WindUI:Notify({ Title = "已结算", Content = "已请求 Return 结算", Duration = 3 })
+    end
+})
+
+-- ===== 移速加速（BodyVelocity 沿机头方向） =====
+farmSec:Toggle({
+    Title = "移速加速",
+    Default = false,
+    Callback = function(state)
+        getgenv().BuildAPlaneBoost = state
+        if state then
+            task.spawn(boostLoop)
+            WindUI:Notify({ Title = "已启动", Content = "移速加速已开启", Duration = 3 })
+        else
+            WindUI:Notify({ Title = "已停止", Content = "移速加速已关闭", Duration = 3 })
+        end
+    end
+})
+
+farmSec:Slider({
+    Title = "移速值",
+    Value = { Min = 60, Max = 400, Default = boostSpeed },
+    Increment = 10,
+    Callback = function(v)
+        boostSpeed = v
     end
 })
 
