@@ -225,45 +225,53 @@ local function autoBuySelectedLoop(statusTag)
     end
 end
 
--- ================= 加速相关 =================
-local boostSpeed = 150
-local function getSeatPart()
-    local c = player.Character
-    if not c then return nil end
-    local hum = c:FindFirstChildOfClass("Humanoid")
-    if hum and hum.SeatPart then
-        return hum.SeatPart
-    end
-    return nil
-end
-
--- 目标：玩家坐的飞机座位（飞机本体），没有座位才回退到玩家根部件
-local function getBoostTarget()
-    local seat = getSeatPart()
-    if seat then return seat end
-    return getRoot()
-end
-
-local function boostLoop()
-    local bv = Instance.new("BodyVelocity")
-    bv.MaxForce = Vector3.new(1e5, 1e5, 1e5)
-    while getgenv().BuildAPlaneBoost do
-        local target = getBoostTarget()
-        if target then
-            -- 保持高度，防止往下掉进虚空
-            if target.Position.Y < SET.ALTITUDE then
-                local cf = target.CFrame
-                target.CFrame = cf + Vector3.new(0, SET.ALTITUDE - target.Position.Y, 0)
-            end
-            -- 只沿 +X 水平加速（游戏飞行方向），不碰 Y
-            bv.Velocity = Vector3.new(boostSpeed, 0, 0)
-            if bv.Parent ~= target then
-                pcall(function() bv.Parent = target end)
-            end
+-- ================= 加速相关（改螺旋桨推进力，NXP 验证过的有效方案） =================
+local PROPS = { "propeller_0", "propeller_1", "propeller_2", "propeller_3", "propeller_blood" }
+local BlockInfo = nil
+local origPropForce = nil
+pcall(function()
+    local mods = ReplicatedStorage:FindFirstChild("Modules")
+    if mods and mods:FindFirstChild("Utilities") then
+        local mu = mods.Utilities
+        if mu:FindFirstChild("BlocksUtil") then
+            local BLK = require(mu.BlocksUtil)
+            BlockInfo = BLK and BLK.BlockInfo
         end
-        task.wait(0.1)
     end
-    pcall(function() bv:Destroy() end)
+end)
+
+local boostSpeed = 150
+local boostOn = false
+
+local function setPropForce(v)
+    if not BlockInfo then return false end
+    for _, p in ipairs(PROPS) do
+        local bd = BlockInfo[p]
+        if bd then
+            bd.Force = v
+        end
+    end
+    return true
+end
+
+local function storeOrigForce()
+    origPropForce = {}
+    if not BlockInfo then return end
+    for _, p in ipairs(PROPS) do
+        local bd = BlockInfo[p]
+        if bd then
+            origPropForce[p] = bd.Force
+        end
+    end
+end
+
+local function restoreOrigForce()
+    if not BlockInfo or not origPropForce then return end
+    for p, v in pairs(origPropForce) do
+        local bd = BlockInfo[p]
+        if bd then bd.Force = v end
+    end
+    origPropForce = nil
 end
 
 -- ================= UI =================
@@ -337,17 +345,23 @@ farmSec:Button({
     end
 })
 
--- ===== 移速加速（BodyVelocity 沿机头方向） =====
+-- ===== 移速加速（改螺旋桨推进力，起飞后生效） =====
 farmSec:Toggle({
     Title = "移速加速",
     Default = false,
     Callback = function(state)
-        getgenv().BuildAPlaneBoost = state
+        boostOn = state
         if state then
-            task.spawn(boostLoop)
-            WindUI:Notify({ Title = "已启动", Content = "移速加速已开启", Duration = 3 })
+            if not BlockInfo then
+                WindUI:Notify({ Title = "错误", Content = "未找到BlocksUtil，加速不可用", Duration = 4 })
+                return
+            end
+            storeOrigForce()
+            setPropForce(boostSpeed)
+            WindUI:Notify({ Title = "已启动", Content = "螺旋桨推力已提升，起飞后生效", Duration = 3 })
         else
-            WindUI:Notify({ Title = "已停止", Content = "移速加速已关闭", Duration = 3 })
+            restoreOrigForce()
+            WindUI:Notify({ Title = "已停止", Content = "螺旋桨推力已恢复", Duration = 3 })
         end
     end
 })
@@ -358,6 +372,9 @@ farmSec:Slider({
     Increment = 10,
     Callback = function(v)
         boostSpeed = v
+        if boostOn and BlockInfo then
+            setPropForce(v)
+        end
     end
 })
 
