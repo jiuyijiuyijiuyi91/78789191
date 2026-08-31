@@ -3295,7 +3295,7 @@ ServerBox:AddButton("[FPS]一键点击", function()
     loadstring(game:HttpGet("https://raw.githubusercontent.com/jiuyijiuyijiuyi91/78789191/refs/heads/main/FPS%E4%B8%80%E9%94%AE%E7%94%B5%E5%87%BB.lua"))()
 end)
 ServerBox:AddButton("捕捉10亿鸭子", function()
-    loadstring(game:HttpGet("https://github.com/jiuyijiuyijiuyi91/78789191/blob/main/%E6%8D%95%E6%8D%8910%E4%BA%BF%E5%8F%AA%E9%B8%AD%E5%AD%90.lua"))()
+    loadstring(game:HttpGet("https://raw.githubusercontent.com/jiuyijiuyijiuyi91/78789191/refs/heads/main/%E6%8D%95%E6%8D%8910%E4%BA%BF%E5%8F%AA%E9%B8%AD%E5%AD%90.lua"))()
 end)
 -- UI设置
 Tabs["UI Settings"] = Window:AddTab("UI设置", "settings")
