@@ -1,6 +1,6 @@
 local repo = "https://raw.githubusercontent.com/ATLASTEAM01/Obsidian/main/"
 local _startTime = tick()
-local _lastUpdate = "2026年8月29日2时15分"
+local _lastUpdate = "2026年8月31日12时26分"
 
 -- 安全加载函数
 local function safeLoad(url)
