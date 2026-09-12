@@ -2,7 +2,7 @@
 -- XJW飞行 独立版 (经典彩色飞行V3)
 -- 作者B站UID: 3706985503525348
 -- 支持: R6/R15 / WASD控制 / 加速减速 / 最小化
--- ============================================
+-- ==============================
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -23,11 +23,44 @@ local flyState = {
     speeds = 1,
     nowe = false,
     tpwalking = false,
+    tpGen = 0,
     tis = nil,
     dis = nil,
 }
 
 local speaker = Players.LocalPlayer
+
+-- ============================================
+-- 瞬移行走线程统一管理
+-- 用 generation(代) 计数让旧线程立即失效，
+-- 避免加速/减速时旧线程被重新置回 true 而无法退出，
+-- 导致"加了速度后再减速，速度降不下来"。
+-- ============================================
+local function stopTpWalkers()
+    flyState.tpGen = (flyState.tpGen or 0) + 1
+    flyState.tpwalking = false
+end
+
+local function startTpWalkers()
+    stopTpWalkers()
+    local myGen = flyState.tpGen
+    if flyState.speeds <= 0 then return end
+    flyState.tpwalking = true
+    for _ = 1, flyState.speeds do
+        task.spawn(function()
+            local hb = RunService.Heartbeat
+            while flyState.tpwalking and flyState.tpGen == myGen do
+                hb:Wait()
+                if flyState.tpGen ~= myGen then break end
+                local chr = speaker.Character
+                local hum = chr and chr:FindFirstChildWhichIsA("Humanoid")
+                if chr and hum and hum.Parent and hum.MoveDirection.Magnitude > 0 then
+                    chr:TranslateBy(hum.MoveDirection)
+                end
+            end
+        end)
+    end
+end
 
 -- 创建飞行GUI
 local function toggleFlyGui(show)
@@ -169,7 +202,7 @@ local function toggleFlyGui(show)
     onof.MouseButton1Down:Connect(function()
         if flyState.nowe == true then
             flyState.nowe = false
-            flyState.tpwalking = false
+            stopTpWalkers()
 
             local chr = speaker.Character
             local hum = chr and chr:FindFirstChildWhichIsA("Humanoid")
@@ -184,20 +217,8 @@ local function toggleFlyGui(show)
         else
             flyState.nowe = true
 
-            -- 瞬移行走线程
-            for i = 1, flyState.speeds do
-                task.spawn(function()
-                    local hb = RunService.Heartbeat
-                    flyState.tpwalking = true
-                    local chr = speaker.Character
-                    local hum = chr and chr:FindFirstChildWhichIsA("Humanoid")
-                    while flyState.tpwalking and hb:Wait() and chr and hum and hum.Parent do
-                        if hum.MoveDirection.Magnitude > 0 then
-                            chr:TranslateBy(hum.MoveDirection)
-                        end
-                    end
-                end)
-            end
+            -- 瞬移行走线程（按当前速度档位启动）
+            startTpWalkers()
 
             local chr = speaker.Character
             local anim = chr and chr:FindFirstChild("Animate")
@@ -283,7 +304,7 @@ local function toggleFlyGui(show)
             rigHum.PlatformStand = false
             local anim2 = speaker.Character and speaker.Character:FindFirstChild("Animate")
             if anim2 then anim2.Disabled = false end
-            flyState.tpwalking = false
+            stopTpWalkers()
         else
             -- R15
             local UpperTorso = speaker.Character:FindFirstChild("UpperTorso")
@@ -351,7 +372,7 @@ local function toggleFlyGui(show)
             rigHum.PlatformStand = false
             local anim2 = speaker.Character and speaker.Character:FindFirstChild("Animate")
             if anim2 then anim2.Disabled = false end
-            flyState.tpwalking = false
+            stopTpWalkers()
         end
     end)
 
@@ -388,20 +409,7 @@ local function toggleFlyGui(show)
         flyState.speeds = flyState.speeds + 1
         speedLbl.Text = tostring(flyState.speeds)
         if flyState.nowe then
-            flyState.tpwalking = false
-            for i = 1, flyState.speeds do
-                task.spawn(function()
-                    local hb = RunService.Heartbeat
-                    flyState.tpwalking = true
-                    local chr = speaker.Character
-                    local hum = chr and chr:FindFirstChildWhichIsA("Humanoid")
-                    while flyState.tpwalking and hb:Wait() and chr and hum and hum.Parent do
-                        if hum.MoveDirection.Magnitude > 0 then
-                            chr:TranslateBy(hum.MoveDirection)
-                        end
-                    end
-                end)
-            end
+            startTpWalkers()
         end
     end)
 
@@ -415,20 +423,7 @@ local function toggleFlyGui(show)
             flyState.speeds = flyState.speeds - 1
             speedLbl.Text = tostring(flyState.speeds)
             if flyState.nowe then
-                flyState.tpwalking = false
-                for i = 1, flyState.speeds do
-                    task.spawn(function()
-                        local hb = RunService.Heartbeat
-                        flyState.tpwalking = true
-                        local chr = speaker.Character
-                        local hum = chr and chr:FindFirstChildWhichIsA("Humanoid")
-                        while flyState.tpwalking and hb:Wait() and chr and hum and hum.Parent do
-                            if hum.MoveDirection.Magnitude > 0 then
-                                chr:TranslateBy(hum.MoveDirection)
-                            end
-                        end
-                    end)
-                end
+                startTpWalkers()
             end
         end
     end)
@@ -436,7 +431,7 @@ local function toggleFlyGui(show)
     -- 关闭
     closebutton.MouseButton1Click:Connect(function()
         flyState.nowe = false
-        flyState.tpwalking = false
+        stopTpWalkers()
         pcall(function()
             local chr = speaker.Character
             local hum = chr and chr:FindFirstChildWhichIsA("Humanoid")
@@ -497,7 +492,7 @@ speaker.CharacterAdded:Connect(function(char)
         if anim then anim.Disabled = false end
     end)
     flyState.nowe = false
-    flyState.tpwalking = false
+    stopTpWalkers()
 end)
 
 -- 启动飞行面板
