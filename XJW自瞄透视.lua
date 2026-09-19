@@ -18,6 +18,14 @@ local Workspace = game:GetService("Workspace")
 local RunService = game:GetService("RunService")
 local LocalPlayer = Players.LocalPlayer
 local Camera = Workspace.CurrentCamera
+pcall(function()
+local waitT = 0
+while not Camera and waitT < 15 do
+task.wait(0.1)
+waitT = waitT + 0.1
+Camera = Workspace.CurrentCamera
+end
+end)
 local UserInputService = game:GetService("UserInputService")
 local CollectionService = game:GetService("CollectionService")
 local ESPEnabled = false
