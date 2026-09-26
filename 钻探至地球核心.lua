@@ -210,6 +210,9 @@ AttackBox:AddSlider("AttackInterval", { Text = "攻击间隔(秒)", Min = 0.1, M
 local CollectBox = Tabs.Main:AddLeftGroupbox("自动拾取")
 Toggles.AutoCollect = CollectBox:AddToggle("AutoCollect", { Text = "自动拾取物品（需要拿袋子）", Default = false })
 
+local ChestBox = Tabs.Main:AddLeftGroupbox("自动收集箱子")
+Toggles.AutoChest = ChestBox:AddToggle("AutoChest", { Text = "自动收集箱子", Default = false })
+
 local CollectBlacklist = {}
 local function GetToolController()
     local ok, wc = pcall(function()
@@ -251,6 +254,125 @@ local function DrillCollect()
         end
     end
 end
+
+local ChestTypes = { CommonChest = true, GoldChest = true, DiamondChest = true, VoidChest = true, PhoenixChest = true }
+
+local function IsValidChest(chest)
+    if not chest then return false end
+    if not chest.Parent then return false end
+    if not chest:IsDescendantOf(workspace) then return false end
+    if chest:GetAttribute("Opened") == true then return false end
+    if chest:GetAttribute("Locked") == true then return false end
+    if chest:GetAttribute("RequiresKey") == true then return false end
+    if chest:GetAttribute("BossDefeated") == false then return false end
+    local parent, depth = chest.Parent, 0
+    while parent and parent ~= workspace and depth < 10 do
+        depth = depth + 1
+        if parent:GetAttribute("WaveCompleted") == false then return false end
+        if parent:GetAttribute("EncounterActive") == true then return false end
+        if parent:GetAttribute("TriggeredFirstHit") == false then return false end
+        if parent:GetAttribute("WaveActive") == true then return false end
+        parent = parent.Parent
+    end
+    return true
+end
+
+local function IsTargetChest(obj)
+    if not obj then return false end
+    local name = obj.Name
+    if ChestTypes[name] then return IsValidChest(obj) end
+    local sel = obj:GetAttribute("SessionChestSelectedModel")
+    if sel and ChestTypes[sel] then return IsValidChest(obj) end
+    local parent = obj.Parent
+    if parent and parent:IsA("Model") then
+        if ChestTypes[parent.Name] then return IsValidChest(parent) end
+        local psel = parent:GetAttribute("SessionChestSelectedModel")
+        if psel and ChestTypes[psel] then return IsValidChest(parent) end
+    end
+    return false
+end
+
+local function GetChestPos(chest)
+    if not chest then return nil end
+    if chest:IsA("BasePart") then return chest.Position end
+    if chest:IsA("Model") then
+        local ok, pivot = pcall(function() return chest:GetPivot().Position end)
+        if ok then return pivot end
+    end
+    local part = chest:FindFirstChildWhichIsA("BasePart")
+    if part then return part.Position end
+    return nil
+end
+
+local ChestCache = {}
+local LastScan = 0
+
+local function ScanChests()
+    local now = tick()
+    if now - LastScan < 2 then return ChestCache end
+    LastScan = now
+    local result, seen = {}, {}
+    local function walk(node)
+        for _, child in ipairs(node:GetChildren()) do
+            if not seen[child] then
+                seen[child] = true
+                if IsTargetChest(child) then
+                    result[#result + 1] = child
+                end
+            end
+            if child:IsA("Model") or child:IsA("Folder") or child:IsA("Part") then
+                walk(child)
+            end
+        end
+    end
+    walk(workspace)
+    ChestCache = result
+    return result
+end
+
+local NearestCache = { Chest = nil, Pos = nil, Time = 0 }
+
+local function GetNearestChest()
+    local rootPos = GetRootPos()
+    if not rootPos then return nil end
+    local now = tick()
+    if now - NearestCache.Time < 0.5 and NearestCache.Chest then
+        local cachedPos = NearestCache.Pos
+        if cachedPos and (rootPos - cachedPos).Magnitude < 10 then
+            return NearestCache.Chest
+        end
+    end
+    local best, bestDist = nil, math.huge
+    for _, chest in ipairs(ScanChests()) do
+        local pos = GetChestPos(chest)
+        if pos then
+            local dist = (pos - rootPos).Magnitude
+            if dist < bestDist then
+                bestDist = dist
+                best = chest
+            end
+        end
+    end
+    NearestCache.Chest = best
+    NearestCache.Pos = rootPos
+    NearestCache.Time = now
+    return best
+end
+
+local function ClearChestCache()
+    ChestCache = {}
+    LastScan = 0
+    NearestCache.Chest = nil
+    NearestCache.Time = 0
+end
+
+workspace.DescendantAdded:Connect(function(child)
+    if child:IsA("BasePart") or child:IsA("Model") then
+        if ChestTypes[child.Name] or child:GetAttribute("SessionChestId") then
+            ClearChestCache()
+        end
+    end
+end)
 
 local function GetDrill()
     return workspace:FindFirstChild("Drill")
@@ -737,6 +859,39 @@ task.spawn(function()
         if Toggles.AutoCollect.Value then
             DrillCollect()
         end
+    end
+end)
+
+local LastChestTp = 0
+
+task.spawn(function()
+    while true do
+        task.wait(1)
+        if Toggles.AutoChest.Value then
+            local now = tick()
+            if now - LastChestTp < 1.2 then
+                task.wait(0.3)
+            else
+                local ok, err = pcall(function()
+                    local chest = GetNearestChest()
+                    if chest then
+                        local _, _, root = GetCharParts()
+                        if root then
+                            local pos = GetChestPos(chest)
+                            if pos then
+                                root.CFrame = CFrame.new(pos + Vector3.new(0, 3, 0))
+                                LastChestTp = now
+                                task.wait(0.3)
+                            end
+                        end
+                    end
+                end)
+                if not ok then
+                    warn("[自动收集箱子] 错误: " .. tostring(err))
+                end
+            end
+        end
+        task.wait(0.5)
     end
 end)
 
