@@ -112,6 +112,8 @@ do
     if a then EggFolders[#EggFolders + 1] = a end
     local b = workspace:FindFirstChild("RenderedEggs")
     if b then EggFolders[#EggFolders + 1] = b end
+    local c = workspace:FindFirstChild("Eggs")
+    if c then EggFolders[#EggFolders + 1] = c end
 end
 
 local TranslateMap = {
@@ -155,6 +157,10 @@ local TranslateMap = {
     Quantum = "量子", Time = "时空", Chrono = "时空", Candy = "糖果",
     Lollipop = "棒棒糖", Cookie = "饼干", Cake = "蛋糕", IceCream = "冰淇淋",
     Volcanic = "火山",
+    White = "白色", Brown = "棕色", Cracked = "破裂", Slime = "史莱姆",
+    Glass = "玻璃", Skull = "骷髅", Asteroid = "小行星", Dominus = "至尊",
+    Flaming = "燃烧", Sinister = "凶煞", Soul = "灵魂", Tidal = "潮汐",
+    Bloom = "绽放", BlackHole = "黑洞", Black = "黑", Hole = "洞", Solaris = "太阳神", Cherub = "天使",
     Sacred = "神圣", Holy = "神圣", Blessed = "祝福", Godly = "神级",
     Shiny = "闪光", Luminous = "发光", Radiant = "光辉", Ethereal = "空灵",
     Enchanted = "附魔", Magical = "魔法", Mystic = "神秘", Spectral = "幽灵",
@@ -257,6 +263,14 @@ local function SplitCamel(name)
     return parts
 end
 
+local UnknownWords = {}
+
+local function CollectUnknown(w)
+    if not UnknownWords[w] then
+        UnknownWords[w] = true
+    end
+end
+
 local function TranslateName(name)
     local words = {}
     for w in name:gmatch("[^%s_]+") do
@@ -271,11 +285,18 @@ local function TranslateName(name)
             if not t then
                 local sub = SplitCamel(w)
                 local subOut = {}
+                local foundAny = false
                 for _, s in ipairs(sub) do
                     local ts = TranslateMap[s]
                     if ts then
                         subOut[#subOut + 1] = ts
+                        foundAny = true
+                    else
+                        CollectUnknown(s)
                     end
+                end
+                if not foundAny then
+                    CollectUnknown(w)
                 end
                 if #subOut > 0 then
                     t = table.concat(subOut)
@@ -292,8 +313,72 @@ local function TranslateName(name)
     return table.concat(out)
 end
 
+local AllEggNames = {
+    "White Egg", "Brown Egg", "Cracked Egg", "Easter Egg", "Stone Egg",
+    "Leaf Egg", "Mushroom Egg", "Flower Egg", "Slime Egg", "Ice Egg",
+    "Glass Egg", "Golden Egg", "Diamond Egg", "Crystal Egg", "Skull Egg",
+    "Asteroid Egg", "Dominus Egg", "Flaming Egg", "Sinister Egg", "Soul Egg",
+    "Tidal Egg", "Aurora Egg", "Galaxy Egg", "Bloom Egg", "Black Hole Egg",
+    "Solaris Egg", "Cherub Egg", "Volcanic Egg",
+}
+local function NormalName(s)
+    return s:gsub("[^%a]+", ""):lower()
+end
+
+local EggAliases = {
+    ["Celestial Egg"] = "Aurora Egg",
+    ["Black Dog Egg"] = "Black Hole Egg",
+    ["Black Dog"] = "Black Hole Egg",
+    ["Dog"] = "Black Hole Egg",
+}
+local function OfficialFull(rawName)
+
+
+    local key = NormalName(rawName)
+    for alias, target in pairs(EggAliases) do
+        local ak = NormalName(alias)
+        if key == ak or key:sub(-#ak) == ak then
+            rawName = target
+            break
+        end
+    end
+
+
+
+    local key2 = NormalName(rawName)
+    for _, n in ipairs(AllEggNames) do
+        local nk = NormalName(n)
+        local core = nk:gsub("egg$", "")
+        if key2 == nk or key2:sub(-#nk) == nk or (#core >= 3 and key2:find(core, 1, true)) then
+            return TranslateName(n) or "蛋"
+        end
+    end
+
+    return TranslateName(rawName) or "蛋"
+end
+
+task.spawn(function()
+    while true do
+        task.wait(5)
+        local words = {}
+        for w in pairs(UnknownWords) do
+            words[#words + 1] = w
+        end
+        if #words > 0 then
+            table.sort(words)
+            local content = table.concat(words, "\n")
+            pcall(function()
+                if makefolder and not isfolder("骑宠物") then
+                    makefolder("骑宠物")
+                end
+                writefile("骑宠物/未知词.txt", content)
+            end)
+        end
+    end
+end)
+
 local function CleanName(obj)
-    local t = TranslateName(obj.Name)
+    local t = OfficialFull(obj.Name)
     if not t then return nil end
     t = t:gsub("蛋$", "")
     for _, q in ipairs(QualityWords) do
@@ -304,13 +389,12 @@ local function CleanName(obj)
 end
 
 local function DisplayName(obj)
-    local t = TranslateName(obj.Name)
+    local t = OfficialFull(obj.Name)
     if not t then return nil end
     t = t:gsub("蛋$", "")
     if #t == 0 then return nil end
     return t
 end
-
 local function GetChar()
     return LP.Character or LP.CharacterAdded:Wait()
 end
@@ -321,7 +405,7 @@ local function GetRoot()
 end
 
 local function IsExcluded(name)
-    return name == "Common" or name == "Volcanic"
+    return name == "Common"
 end
 
 local HatchedMarks = { "Hatched", "Claimed", "Collected", "Used", "Open", "Taken", "PickedUp", "Gone", "IsHatched", "Hatching", "Stolen", "StolenBy", "CollectedBy", "Incubated" }
@@ -410,6 +494,236 @@ local function TPTo(target)
     SetPos(root, target)
 end
 
+local LastArrive = 0
+local GoHome = false
+local Flying = false
+local FlyBody = nil
+local FlyGyro = nil
+local NoClipActive = false
+local NoClipConn = nil
+local NoClipCharConn = nil
+local NoClipDescConns = {}
+local NoClipOrig = {}
+local function NoClipSetupChar(char)
+    if not char then return end
+    for _, p in pairs(char:GetDescendants()) do
+        if p:IsA("BasePart") then
+            if not NoClipOrig[p] then
+                NoClipOrig[p] = p.CanCollide
+            end
+            p.CanCollide = false
+        end
+    end
+    local dc = char.DescendantAdded:Connect(function(d)
+        if d:IsA("BasePart") then
+            if not NoClipOrig[d] then
+                NoClipOrig[d] = d.CanCollide
+            end
+            d.CanCollide = false
+        end
+    end)
+    NoClipDescConns[char] = dc
+end
+local function SetNoclip(on)
+    if on then
+        if NoClipActive then return end
+        NoClipActive = true
+        local char = LP.Character
+        if char then NoClipSetupChar(char) end
+        if not NoClipConn then
+            NoClipConn = RunService.Stepped:Connect(function()
+                if not NoClipActive then return end
+                local c = LP.Character
+                if not c then return end
+                for _, p in pairs(c:GetDescendants()) do
+                    if p:IsA("BasePart") then
+                        p.CanCollide = false
+                    end
+                end
+            end)
+        end
+        if NoClipCharConn then NoClipCharConn:Disconnect() end
+        NoClipCharConn = LP.CharacterAdded:Connect(function(newChar)
+            if NoClipActive then
+                task.wait()
+                NoClipSetupChar(newChar)
+            end
+        end)
+    else
+        NoClipActive = false
+        if NoClipConn then
+            NoClipConn:Disconnect()
+            NoClipConn = nil
+        end
+        if NoClipCharConn then
+            NoClipCharConn:Disconnect()
+            NoClipCharConn = nil
+        end
+        for p, orig in pairs(NoClipOrig) do
+            pcall(function()
+                if p and p.Parent then
+                    p.CanCollide = orig
+                end
+            end)
+        end
+        for char, conn in pairs(NoClipDescConns) do
+            if conn then conn:Disconnect() end
+        end
+        NoClipDescConns = {}
+        NoClipOrig = {}
+    end
+end
+local function StopFly()
+    Flying = false
+    if FlyBody then
+        pcall(function()
+            FlyBody:Destroy()
+        end)
+        FlyBody = nil
+    end
+    if FlyGyro then
+        pcall(function()
+            FlyGyro:Destroy()
+        end)
+        FlyGyro = nil
+    end
+    SetNoclip(false)
+end
+local function FlyTo(target, speed, isEgg)
+    if Flying then return end
+    local root = GetRoot()
+    if not root then return end
+    Flying = true
+    SetNoclip(true)
+    local bv = Instance.new("BodyVelocity")
+    bv.MaxForce = Vector3.new(9e5, 9e5, 9e5)
+    bv.Parent = root
+    FlyBody = bv
+    local bg = Instance.new("BodyGyro")
+    bg.MaxTorque = Vector3.new(9e5, 9e5, 9e5)
+    bg.D = 500
+    bg.P = 20000
+    bg.CFrame = root.CFrame
+    bg.Parent = root
+    FlyGyro = bg
+    task.spawn(function()
+        while Flying and root and root.Parent do
+            if not (Toggles.AutoTP and Toggles.AutoTP.Value) then
+                break
+            end
+            local diff = target - root.Position
+            local dist = diff.Magnitude
+            if dist < 5 then
+                if isEgg then
+                    LastArrive = os.clock()
+                end
+                GoHome = true
+                break
+            end
+            bv.Velocity = diff.Unit * math.min(speed, dist * 3)
+            if diff.Magnitude > 0.1 then
+                bg.CFrame = CFrame.lookAt(root.Position, root.Position + diff.Unit)
+            end
+            task.wait()
+        end
+        bv.Velocity = Vector3.new(0, 0, 0)
+        task.wait(0.1)
+        StopFly()
+    end)
+end
+local function FindPromptPart(v)
+    local p = v.Parent
+    if not p then return nil end
+    if p:IsA("BasePart") then
+        return p
+    end
+    if p:IsA("Attachment") and p.Parent and p.Parent:IsA("BasePart") then
+        return p.Parent
+    end
+    local found = p:FindFirstChildWhichIsA("BasePart", true)
+    if found then
+        return found
+    end
+    local gp = p.Parent
+    if gp then
+        found = gp:FindFirstChildWhichIsA("BasePart", true)
+        if found then
+            return found
+        end
+    end
+    return nil
+end
+local function GetCharPart()
+    local char = LP.Character
+    if char then
+        local hrp = char:FindFirstChild("HumanoidRootPart")
+        if hrp then
+            return hrp
+        end
+        return char:FindFirstChild("Head")
+    end
+    return nil
+end
+local function GetEggOfPart(part)
+    local eggSet = {}
+    for _, e in ipairs(CollectEggs()) do
+        eggSet[e.Obj] = e
+    end
+    local p = part
+    while p do
+        local e = eggSet[p]
+        if e then
+            return e
+        end
+        p = p.Parent
+    end
+    return nil
+end
+task.spawn(function()
+    while true do
+        task.wait(0.5)
+        if Toggles.AutoPick.Value then
+            local cp = GetCharPart()
+            if cp then
+                local cpos = cp.Position
+                for _, v in ipairs(workspace:GetDescendants()) do
+                    if v.ClassName == "ProximityPrompt" and v.Parent then
+                        local part = FindPromptPart(v)
+                        if part and (part.Position - cpos).Magnitude <= 12 then
+                            local e = GetEggOfPart(part)
+                            if e then
+                                pcall(function() fireproximityprompt(v, v.HoldDuration) end)
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+end)
+local function GetCheckedSet()
+    local out = {}
+    local dd = Options.AutoEgg
+    if not dd then return out end
+    local v = dd.Value
+    if type(v) == "table" then
+        local vals = dd.Values or {}
+        for k, val in pairs(v) do
+            if type(k) == "number" then
+                local name = vals[k]
+                if name then
+                    out[name] = true
+                end
+            elseif type(k) == "string" then
+                out[k] = true
+            end
+        end
+    elseif type(v) == "string" then
+        out[v] = true
+    end
+    return out
+end
+
 local function GetNearestEgg()
     local root = GetRoot()
     if not root then return nil end
@@ -429,7 +743,7 @@ local function GetNearestEggOfType(full)
     if not root then return nil end
     local best, bestDist = nil, math.huge
     for _, e in ipairs(CollectEggs()) do
-        local f = TranslateName(e.Obj.Name)
+        local f = OfficialFull(e.Obj.Name)
         if f == full then
             local d = (e.Pos - root.Position).Magnitude
             if d < bestDist then
@@ -441,12 +755,72 @@ local function GetNearestEggOfType(full)
     return best
 end
 
+local EggValue = {
+    whiteegg = 1, brownegg = 5, crackedegg = 30, easteregg = 50, stoneegg = 100,
+    leafegg = 200, mushroomegg = 500, floweregg = 750, slimeegg = 1000, iceegg = 3000,
+    glassegg = 10000, goldenegg = 30000, diamondegg = 90000, crystalegg = 150000, skulleg = 250000,
+    asteroidegg = 500000, dominusegg = 700000, flamingegg = 1000000, sinisteregg = 3000000, soulegg = 7000000,
+    tidalegg = 8000000, auroraegg = 300000000, galaxyegg = 1500000000, bloomegg = 2000000000, blackholeegg = 100000000000,
+    solarisegg = 300000000000, cherubegg = 1000000000000, volcanicegg = 2500000000000,
+}
+local function GetEggValue(rawName)
+    local k = NormalName(rawName)
+    local v = EggValue[k]
+    if v then return v end
+    for alias, target in pairs(EggAliases) do
+        local ak = NormalName(alias)
+        if k == ak or k:sub(-#ak) == ak then
+            return EggValue[NormalName(target)]
+        end
+    end
+    local bestVal = 0
+    for name, val in pairs(EggValue) do
+        local core = name:gsub("egg$", "")
+        if #core >= 3 and k:find(core, 1, true) and val > bestVal then
+            bestVal = val
+        end
+    end
+    return bestVal
+end
+local function GetHighestValueEgg()
+    local root = GetRoot()
+    if not root then return nil end
+    local best, bestVal = nil, -1
+    for _, e in ipairs(CollectEggs()) do
+        local val = GetEggValue(e.Obj.Name)
+        if val > bestVal then
+            bestVal = val
+            best = e
+        end
+    end
+    return best
+end
 local PlotNames = {}
 local PlotObjs = {}
+local MyPlot = nil
+
+local function GetPlotOwner(child)
+    local data = child:FindFirstChild("Data")
+    if data then
+        local owner = data:FindFirstChild("Owner")
+        if owner then
+            if owner:IsA("ValueBase") then
+                return tostring(owner.Value)
+            end
+            return owner.Name
+        end
+    end
+    local ok, a = pcall(function()
+        return child:GetAttribute("Owner")
+    end)
+    if ok and type(a) == "string" then return a end
+    return nil
+end
 
 local function ScanPlots()
     local list = {}
     local objs = {}
+    MyPlot = nil
     local plots = workspace:FindFirstChild("Plots")
     if plots then
         local idx = 0
@@ -455,6 +829,10 @@ local function ScanPlots()
             if part then
                 idx = idx + 1
                 local key = "家" .. idx
+                local owner = GetPlotOwner(child)
+                if owner and (owner == LP.Name or (owner:match("^%d+$") and owner == tostring(LP.UserId))) then
+                    MyPlot = child
+                end
                 list[#list + 1] = key
                 objs[key] = child
             end
@@ -474,15 +852,17 @@ local function BuildEggList()
     local order = {}
     local eggs = CollectEggs()
     for _, e in ipairs(eggs) do
-        local full = TranslateName(e.Obj.Name) or "蛋"
-        local g = groups[full]
-        if not g then
-            g = { count = 0, obj = e.Obj }
-            groups[full] = g
-            order[#order + 1] = full
+        local full = OfficialFull(e.Obj.Name)
+        if full ~= "蛋" then
+            local g = groups[full]
+            if not g then
+                g = { count = 0, obj = e.Obj }
+                groups[full] = g
+                order[#order + 1] = full
+            end
+            g.count = g.count + 1
+            g.obj = e.Obj
         end
-        g.count = g.count + 1
-        g.obj = e.Obj
     end
     local list = {}
     local objs = {}
@@ -534,7 +914,7 @@ local function AddESP(obj)
     local label = Instance.new("TextLabel")
     label.Size = UDim2.new(1, 0, 1, 0)
     label.BackgroundTransparency = 1
-    label.Text = DisplayName(obj) or "蛋"
+    label.Text = DisplayName(obj) or ""
     label.TextColor3 = Color3.fromRGB(255, 255, 0)
     label.TextStrokeTransparency = 0
     label.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
@@ -639,6 +1019,24 @@ task.spawn(function()
     end
 end)
 
+task.spawn(function()
+    while true do
+        task.wait(5)
+        pcall(function()
+            local lines = {}
+            for _, e in ipairs(CollectEggs()) do
+                lines[#lines + 1] = e.Obj.Name .. " -> " .. (OfficialFull(e.Obj.Name) or "?")
+            end
+            if #lines > 0 then
+                if makefolder and not isfolder("骑宠物") then
+                    makefolder("骑宠物")
+                end
+                writefile("骑宠物/场上蛋名.txt", table.concat(lines, "\n"))
+            end
+        end)
+    end
+end)
+
 local function GetInterval()
     return 1
 end
@@ -683,14 +1081,31 @@ local AutoBox = Tabs.Main:AddLeftGroupbox("自动功能")
 Toggles.Luck = AutoBox:AddToggle("Luck", { Text = "升级运气", Default = false })
 Toggles.Money = AutoBox:AddToggle("Money", { Text = "自动领钱", Default = false })
 Toggles.Rebirth = AutoBox:AddToggle("Rebirth", { Text = "自动重生", Default = false })
-
+local function UniqueEggFulls()
+    local seen = {}
+    local list = {}
+    for _, n in ipairs(AllEggNames) do
+        local full = OfficialFull(n)
+        if not seen[full] then
+            seen[full] = true
+            list[#list + 1] = full
+        end
+    end
+    return list
+end
+local eggValues = UniqueEggFulls()
+Toggles.AutoPick = AutoBox:AddToggle("AutoPick", { Text = "自动拾取", Default = false })
+Toggles.AutoTP = AutoBox:AddToggle("AutoTP", { Text = "自动飞行蛋", Default = false })
+Options.FlySpeed = AutoBox:AddSlider("FlySpeed", { Text = "飞行速度", Min = 1, Max = 1000, Default = 400, Rounding = 1 })
+Options.DelayTime = AutoBox:AddSlider("DelayTime", { Text = "停留秒数", Min = 1, Max = 10, Default = 3, Rounding = 1 })
+Options.AutoEgg = AutoBox:AddDropdown("AutoEgg", { Text = "选择飞行蛋", Values = #eggValues > 0 and eggValues or { "无蛋" }, Default = 1, Multi = true })
 local EggBox = Tabs.Main:AddRightGroupbox("蛋操作")
 Toggles.ESP = EggBox:AddToggle("ESP", { Text = "透视蛋", Default = false })
 Toggles.AutoRefresh = EggBox:AddToggle("AutoRefresh", { Text = "自动刷新列表", Default = true })
 
 local eggList = BuildEggList()
 Options.EggSelect = EggBox:AddDropdown("EggSelect", { Text = "传送蛋（数字代表蛋的数量）", Values = #eggList > 0 and eggList or { "无蛋" }, Default = 1, Multi = false })
-EggBox:AddButton({ Text = "传送最近蛋", Func = function()
+EggBox:AddButton({ Text = "传送当前选择蛋", Func = function()
     local key = Options.EggSelect.Value
     local e = nil
     if key and EggTypeMap[key] then
@@ -705,10 +1120,25 @@ EggBox:AddButton({ Text = "传送最近蛋", Func = function()
         end)
     end
 end })
+EggBox:AddButton({ Text = "传送最高价值蛋", Func = function()
+    local e = GetHighestValueEgg()
+    if not e then return end
+    TPTo(e.Pos + Vector3.new(0, 1, 0))
+end })
 
 local PlotBox = Tabs.Main:AddRightGroupbox("传送点")
 local plots = ScanPlots()
 Options.PlotSelect = PlotBox:AddDropdown("PlotSelect", { Text = "选择传送点", Values = #plots > 0 and plots or { "无传送点" }, Default = 1, Multi = false })
+PlotBox:AddButton({ Text = "传送到自家", Func = function()
+    if MyPlot then
+        local part = MyPlot:IsA("BasePart") and MyPlot or MyPlot:FindFirstChildWhichIsA("BasePart")
+        if part then
+            pcall(function()
+                TPTo(part.Position + Vector3.new(0, 1, 0))
+            end)
+        end
+    end
+end })
 PlotBox:AddButton({ Text = "传送", Func = function()
     local name = Options.PlotSelect.Value
     local obj = PlotObjs[name]
@@ -833,3 +1263,56 @@ if ThemeManager then
         ThemeManager:ApplyTheme("Default")
     end)
 end
+
+task.spawn(function()
+    while true do
+        task.wait(0.5)
+        if Toggles.AutoTP and Toggles.AutoTP.Value then
+            local set = GetCheckedSet()
+            if next(set) then
+                local root = GetRoot()
+                if root and not Flying then
+                    if GoHome then
+                        if os.clock() - LastArrive >= Options.DelayTime.Value then
+                            local homePart = nil
+                            if MyPlot then
+                                homePart = MyPlot:IsA("BasePart") and MyPlot or MyPlot:FindFirstChildWhichIsA("BasePart")
+                            end
+                            if homePart then
+                                local hp = homePart.Position
+                                if (root.Position - hp).Magnitude < 8 then
+                                    GoHome = false
+                                    LastArrive = 0
+                                else
+                                    FlyTo(hp + Vector3.new(0, 1, 0), Options.FlySpeed.Value)
+                                end
+                            else
+                                GoHome = false
+                                LastArrive = 0
+                            end
+                        end
+                    elseif os.clock() - LastArrive >= Options.DelayTime.Value then
+                        local best, bestDist = nil, math.huge
+                        for _, e in ipairs(CollectEggs()) do
+                            if set[OfficialFull(e.Obj.Name)] then
+                                local d = (e.Pos - root.Position).Magnitude
+                                if d < bestDist then
+                                    bestDist = d
+                                    best = e
+                                end
+                            end
+                        end
+                        if best and bestDist > 6 then
+                            FlyTo(best.Pos + Vector3.new(0, 1, 0), Options.FlySpeed.Value, true)
+                        end
+                    end
+                end
+            end
+        else
+            if Flying then
+                StopFly()
+            end
+            GoHome = false
+        end
+    end
+end)
