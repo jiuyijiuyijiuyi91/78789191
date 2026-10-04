@@ -51,7 +51,9 @@ local Toggles = Library.Toggles
 local Window = Library:CreateWindow({ Title = "骑宠物", Footer = "XJW", Center = true, AutoShow = true })
 
 local Tabs = {
-    Main = Window:AddTab("主页", "user"),
+    Notice = Window:AddTab("公告", "user"),
+    Main = Window:AddTab("功能", "user"),
+    Farm = Window:AddTab("自动农场", "user"),
     ["UI Settings"] = Window:AddTab("UI设置", "settings"),
 }
 
@@ -105,6 +107,11 @@ local function CollectPetIds()
 	return ids
 end
 local Rebirth = GameR and GameR:FindFirstChild("Rebirth")
+local OfflineEarnings = GameR and GameR:FindFirstChild("OfflineEarnings")
+local Autobuy = GameR and GameR:FindFirstChild("Autobuy")
+local PlacePet = GameR and GameR:FindFirstChild("PlacePet")
+local EggPlaced = GameR and GameR:FindFirstChild("EggPlaced")
+local BasketDrop = GameR and GameR:FindFirstChild("BasketDrop")
 
 local EggFolders = {}
 do
@@ -245,6 +252,66 @@ local QualityWords = {
     "祝福", "神级", "闪光", "发光", "光辉", "空灵", "附魔", "异域",
 }
 
+local QualityList = {
+    "Common", "Uncommon", "Rare", "Epic", "Legendary", "Mythic",
+    "Divine", "Celestial", "Cosmic", "Galactic", "Galaxy", "Universe",
+    "Space", "Astral", "Royal", "King", "Queen", "Emperor", "Guardian",
+    "Ancient", "Primal", "Cursed", "Corrupted", "Void", "Abyss", "Hell",
+    "Flame", "Shadow", "Dark", "Light", "Golden", "Silver", "Blessed",
+    "Godly", "Shiny", "Glowing", "Radiant", "Ethereal", "Enchanted",
+    "Exotic", "Ultimate", "Super", "Giant", "Holy", "Volcanic",
+}
+
+local NumQuality = { "Common", "Uncommon", "Rare", "Epic", "Legendary", "Mythic", "Divine", "Godly" }
+
+local QualityColors = {
+    Common = Color3.fromRGB(80, 255, 80),
+    Uncommon = Color3.fromRGB(255, 255, 80),
+    Rare = Color3.fromRGB(80, 160, 255),
+    Epic = Color3.fromRGB(255, 120, 40),
+    Legendary = Color3.fromRGB(255, 210, 40),
+    Mythic = Color3.fromRGB(200, 80, 255),
+    Divine = Color3.fromRGB(255, 80, 80),
+    Celestial = Color3.fromRGB(120, 220, 255),
+    Cosmic = Color3.fromRGB(255, 120, 220),
+    Galactic = Color3.fromRGB(120, 120, 255),
+    Galaxy = Color3.fromRGB(120, 120, 255),
+    Universe = Color3.fromRGB(160, 80, 255),
+    Space = Color3.fromRGB(60, 60, 120),
+    Astral = Color3.fromRGB(140, 100, 255),
+    Royal = Color3.fromRGB(255, 200, 120),
+    King = Color3.fromRGB(255, 210, 80),
+    Queen = Color3.fromRGB(255, 160, 200),
+    Emperor = Color3.fromRGB(255, 120, 60),
+    Guardian = Color3.fromRGB(120, 200, 120),
+    Ancient = Color3.fromRGB(160, 120, 60),
+    Primal = Color3.fromRGB(120, 200, 80),
+    Cursed = Color3.fromRGB(120, 40, 40),
+    Corrupted = Color3.fromRGB(200, 40, 120),
+    Void = Color3.fromRGB(60, 40, 120),
+    Abyss = Color3.fromRGB(30, 30, 60),
+    Hell = Color3.fromRGB(255, 60, 0),
+    Flame = Color3.fromRGB(255, 120, 0),
+    Shadow = Color3.fromRGB(80, 80, 100),
+    Dark = Color3.fromRGB(60, 60, 70),
+    Light = Color3.fromRGB(255, 255, 255),
+    Golden = Color3.fromRGB(255, 200, 40),
+    Silver = Color3.fromRGB(200, 210, 220),
+    Blessed = Color3.fromRGB(255, 240, 160),
+    Godly = Color3.fromRGB(255, 60, 60),
+    Shiny = Color3.fromRGB(120, 255, 220),
+    Glowing = Color3.fromRGB(120, 255, 120),
+    Radiant = Color3.fromRGB(255, 255, 120),
+    Ethereal = Color3.fromRGB(200, 200, 255),
+    Enchanted = Color3.fromRGB(160, 120, 255),
+    Exotic = Color3.fromRGB(255, 80, 160),
+    Ultimate = Color3.fromRGB(255, 170, 40),
+    Super = Color3.fromRGB(255, 140, 60),
+    Giant = Color3.fromRGB(140, 200, 80),
+    Holy = Color3.fromRGB(255, 255, 220),
+    Volcanic = Color3.fromRGB(255, 80, 30),
+}
+
 local function SplitCamel(name)
     local parts = {}
     for w in name:gmatch("%u?%l+") do
@@ -333,7 +400,6 @@ local EggAliases = {
 }
 local function OfficialFull(rawName)
 
-
     local key = NormalName(rawName)
     for alias, target in pairs(EggAliases) do
         local ak = NormalName(alias)
@@ -343,13 +409,17 @@ local function OfficialFull(rawName)
         end
     end
 
-
-
     local key2 = NormalName(rawName)
     for _, n in ipairs(AllEggNames) do
         local nk = NormalName(n)
+        if key2 == nk or key2:sub(-#nk) == nk then
+            return TranslateName(n) or "蛋"
+        end
+    end
+    for _, n in ipairs(AllEggNames) do
+        local nk = NormalName(n)
         local core = nk:gsub("egg$", "")
-        if key2 == nk or key2:sub(-#nk) == nk or (#core >= 3 and key2:find(core, 1, true)) then
+        if #core >= 3 and key2:find(core, 1, true) then
             return TranslateName(n) or "蛋"
         end
     end
@@ -394,6 +464,112 @@ local function DisplayName(obj)
     t = t:gsub("蛋$", "")
     if #t == 0 then return nil end
     return t
+end
+local function QualityFromName(rawName)
+    local num = tonumber(rawName)
+    if num then
+        return NumQuality[num]
+    end
+    local key = (rawName or ""):gsub("[^%a]", ""):lower()
+    for _, q in ipairs(QualityList) do
+        local qk = q:lower()
+        if key == qk then
+            return q
+        end
+    end
+    for _, q in ipairs(QualityList) do
+        local qk = q:lower()
+        if key:find(qk, 1, true) and not key:find("un" .. qk, 1, true) then
+            return q
+        end
+    end
+    return nil
+end
+local EggQualityMap = {
+    whiteegg = "Common", brownegg = "Common", crackedegg = "Common", easteregg = "Common",
+    stoneegg = "Uncommon", leafegg = "Uncommon", mushroomegg = "Uncommon", floweregg = "Uncommon",
+    slimeegg = "Rare", iceegg = "Rare", glassegg = "Rare",
+    goldenegg = "Epic", diamondegg = "Epic", crystalegg = "Epic",
+    skulleg = "Legendary", asteroidegg = "Legendary", dominusegg = "Legendary",
+    flamingegg = "Mythic", sinisteregg = "Mythic", soulegg = "Mythic", tidalegg = "Mythic",
+    auroraegg = "Divine", galaxyegg = "Divine", bloomegg = "Divine",
+    blackholeegg = "Ethereal", solarisegg = "Ethereal", cherubegg = "Ethereal", volcanicegg = "Ethereal",
+}
+local function GetQualityOf(obj)
+    local mapQ = EggQualityMap[NormalName(obj.Name)]
+    if mapQ then return mapQ end
+    for alias, target in pairs(EggAliases) do
+        local ak = NormalName(alias)
+        local k = NormalName(obj.Name)
+        if k == ak or k:sub(-#ak) == ak then
+            local t = EggQualityMap[NormalName(target)]
+            if t then return t end
+        end
+    end
+    local found = nil
+    pcall(function()
+        for _, c in ipairs(obj:GetChildren()) do
+            if c:IsA("ValueBase") then
+                local n = c.Name:lower()
+                if n:find("rar") or n:find("qual") or n == "tier" or n == "grade" then
+                    local v = c.Value
+                    if v ~= nil then
+                        found = QualityFromName(tostring(v))
+                        if found then return end
+                    end
+                end
+            end
+        end
+    end)
+    if found then return found end
+    pcall(function()
+        for _, d in ipairs(obj:GetDescendants()) do
+            if d:IsA("ValueBase") then
+                local n = d.Name:lower()
+                if n:find("rar") or n:find("qual") or n == "tier" or n == "grade" then
+                    local v = d.Value
+                    if v ~= nil then
+                        found = QualityFromName(tostring(v))
+                        if found then return end
+                    end
+                end
+            end
+        end
+    end)
+    if found then return found end
+    pcall(function()
+        local attrs = obj:GetAttributes()
+        for k, v in pairs(attrs) do
+            local n = k:lower()
+            if n:find("rar") or n:find("qual") or n == "tier" or n == "grade" then
+                local q = QualityFromName(tostring(v))
+                if q then found = q end
+            end
+        end
+    end)
+    if found then return found end
+    pcall(function()
+        for _, d in ipairs(obj:GetDescendants()) do
+            if d:IsA("TextLabel") then
+                local t = d.Text
+                if t and t ~= "" then
+                    local q = QualityFromName(t)
+                    if q then found = q return end
+                end
+            end
+        end
+    end)
+    if found then return found end
+    local node = obj.Parent
+    for _ = 1, 3 do
+        if not node then break end
+        if node:IsA("Folder") then
+            local q = QualityFromName(node.Name)
+            if q then return q end
+        end
+        node = node.Parent
+    end
+    return QualityFromName(obj.Name)
 end
 local function GetChar()
     return LP.Character or LP.CharacterAdded:Wait()
@@ -455,6 +631,22 @@ local function IsAliveEgg(obj)
     if hasMark(obj) then return false end
     return true
 end
+local function IsAliveEggLight(obj)
+    if not obj.Parent then return false end
+    if obj:IsA("BasePart") and obj.Transparency >= 0.3 then return false end
+    local function hasMark(n)
+        for _, c in ipairs(n:GetChildren()) do
+            if c:IsA("BoolValue") and c.Value then
+                for _, m in ipairs(HatchedMarks) do
+                    if c.Name == m then return true end
+                end
+            end
+            if (c:IsA("Model") or c:IsA("Folder")) and hasMark(c) then return true end
+        end
+        return false
+    end
+    return not hasMark(obj)
+end
 
 local function CollectEggs()
     local list = {}
@@ -468,12 +660,14 @@ local function CollectEggs()
                     local part = child:FindFirstChildWhichIsA("BasePart")
                     if part then pos = part.Position end
                 end
-                if pos and IsAliveEgg(child) then
+                local alive = pos and IsAliveEgg(child)
+                if alive then
                     list[#list + 1] = { Obj = child, Pos = pos }
-                end
-                if child:IsA("Model") or child:IsA("Folder") then
+                elseif child:IsA("Model") or child:IsA("Folder") then
                     walk(child)
                 end
+            elseif child:IsA("Model") or child:IsA("Folder") then
+                walk(child)
             end
         end
     end
@@ -491,9 +685,113 @@ end
 local function TPTo(target)
     local root = GetRoot()
     if not root then return end
+    local start = root.Position
+    local dist = (target - start).Magnitude
+    if dist <= 1200 then
+        SetPos(root, target)
+        return
+    end
+    local steps = math.ceil(dist / 1200)
+    for i = 1, steps do
+        local t = start:Lerp(target, i / steps)
+        SetPos(root, t + Vector3.new(0, 3, 0))
+        task.wait(0.05)
+    end
+    local hold = target + Vector3.new(0, 3, 0)
+    SetPos(root, hold)
+    local t0 = os.clock()
+    while os.clock() - t0 < 0.1 do
+        SetPos(root, hold)
+        task.wait(0.02)
+    end
     SetPos(root, target)
 end
 
+local function EggTopPos(e)
+    local h = 5
+    pcall(function()
+        local part = e.Obj
+        if part:IsA("BasePart") then
+            h = part.Size.Y / 2 + 3
+        else
+            local es = part:GetExtentsSize()
+            h = es.Y / 2 + 3
+        end
+    end)
+    return e.Pos + Vector3.new(0, h, 0)
+end
+
+local function DropAndGoHome(hp)
+    if typeof(hp) == "Instance" then
+        hp = hp.Position
+    end
+    local bp = nil
+    if MyPlot then
+        bp = MyPlot:FindFirstChild("Baseplate") or MyPlot:FindFirstChildWhichIsA("BasePart")
+    end
+    local root = GetRoot()
+    if not root then return false end
+    local hp = bp and bp.Position or hp
+    if not hp then return false end
+    local dir = root.Position - hp
+    dir = Vector3.new(dir.X, 0, dir.Z)
+    if dir.Magnitude < 0.1 then
+        dir = Vector3.new(0, 0, -1)
+    else
+        dir = dir.Unit
+    end
+    local dp = hp + dir * 70
+    pcall(function()
+        TPTo(dp + Vector3.new(0, 1, 0))
+    end)
+    task.wait(0.3)
+    if BasketDrop then
+        pcall(function()
+            BasketDrop:FireServer()
+        end)
+    end
+    root = GetRoot()
+    if root then
+        pcall(function()
+            root.CFrame = CFrame.lookAt(root.Position, root.Position - dir * 5)
+        end)
+    end
+    task.wait(1)
+    root = GetRoot()
+    if root then
+        pcall(function()
+            root.CFrame = CFrame.lookAt(root.Position, hp + Vector3.new(0, root.Position.Y, 0))
+        end)
+    end
+    local from = dp + Vector3.new(0, 1, 0)
+    local to = hp + Vector3.new(0, 1, 0)
+    local spd = 12
+    local dist = (to - from).Magnitude
+    local moved = 0
+    local last = os.clock()
+    while moved < 1 do
+        local now = os.clock()
+        local dt = now - last
+        last = now
+        moved = moved + spd * dt / dist
+        if moved > 1 then moved = 1 end
+        local r = GetRoot()
+        if r then
+            r.CFrame = CFrame.new(from:Lerp(to, moved))
+        end
+        task.wait()
+    end
+    if not bp then return true end
+    root = GetRoot()
+    if not root then return false end
+    local lp = nil
+    pcall(function()
+        lp = bp.CFrame:PointToObjectSpace(root.Position)
+    end)
+    if not lp then return false end
+    local half = bp.Size / 2
+    return math.abs(lp.X) <= half.X and math.abs(lp.Z) <= half.Z
+end
 local LastArrive = 0
 local GoHome = false
 local Flying = false
@@ -589,26 +887,20 @@ local function StopFly()
     end
     SetNoclip(false)
 end
-local function FlyTo(target, speed, isEgg)
-    if Flying then return end
+local function FlyTo(target, speed, isEgg, skipAutoTP, duration, force, sync)
+    if Flying then
+        if not force then return end
+        StopFly()
+    end
     local root = GetRoot()
     if not root then return end
     Flying = true
     SetNoclip(true)
-    local bv = Instance.new("BodyVelocity")
-    bv.MaxForce = Vector3.new(9e5, 9e5, 9e5)
-    bv.Parent = root
-    FlyBody = bv
-    local bg = Instance.new("BodyGyro")
-    bg.MaxTorque = Vector3.new(9e5, 9e5, 9e5)
-    bg.D = 500
-    bg.P = 20000
-    bg.CFrame = root.CFrame
-    bg.Parent = root
-    FlyGyro = bg
-    task.spawn(function()
+    local startDist = (target - root.Position).Magnitude
+    local rate = duration and (startDist / duration) or speed
+    local function run()
         while Flying and root and root.Parent do
-            if not (Toggles.AutoTP and Toggles.AutoTP.Value) then
+            if not skipAutoTP and not (Toggles.AutoTP and Toggles.AutoTP.Value) then
                 break
             end
             local diff = target - root.Position
@@ -620,16 +912,18 @@ local function FlyTo(target, speed, isEgg)
                 GoHome = true
                 break
             end
-            bv.Velocity = diff.Unit * math.min(speed, dist * 3)
-            if diff.Magnitude > 0.1 then
-                bg.CFrame = CFrame.lookAt(root.Position, root.Position + diff.Unit)
-            end
-            task.wait()
+            local step = math.min(rate * 0.03, dist)
+            local nxt = root.Position + diff.Unit * step
+            SetPos(root, nxt)
+            task.wait(0.03)
         end
-        bv.Velocity = Vector3.new(0, 0, 0)
-        task.wait(0.1)
         StopFly()
-    end)
+    end
+    if sync then
+        run()
+    else
+        task.spawn(run)
+    end
 end
 local function FindPromptPart(v)
     local p = v.Parent
@@ -681,7 +975,7 @@ local function GetEggOfPart(part)
 end
 task.spawn(function()
     while true do
-        task.wait(0.5)
+        task.wait(0.1)
         if Toggles.AutoPick.Value then
             local cp = GetCharPart()
             if cp then
@@ -854,11 +1148,14 @@ local function BuildEggList()
     for _, e in ipairs(eggs) do
         local full = OfficialFull(e.Obj.Name)
         if full ~= "蛋" then
-            local g = groups[full]
+            local q = GetQualityOf(e.Obj)
+            local qz = q and TranslateMap[q] or q
+            local gkey = q and (full .. "(" .. qz .. ")") or full
+            local g = groups[gkey]
             if not g then
                 g = { count = 0, obj = e.Obj }
-                groups[full] = g
-                order[#order + 1] = full
+                groups[gkey] = g
+                order[#order + 1] = gkey
             end
             g.count = g.count + 1
             g.obj = e.Obj
@@ -867,16 +1164,55 @@ local function BuildEggList()
     local list = {}
     local objs = {}
     local types = {}
-    for _, full in ipairs(order) do
-        local g = groups[full]
-        local key = full .. "(" .. g.count .. ")"
+    for _, gkey in ipairs(order) do
+        local g = groups[gkey]
+        local key = gkey .. "(" .. g.count .. ")"
         list[#list + 1] = key
         objs[key] = g.obj
-        types[key] = full
+        types[key] = gkey:gsub("%(.*%)$", "")
     end
     EggNames = list
     EggObjs = objs
     EggTypeMap = types
+    return list
+end
+
+local VolcanoNames = {}
+local VolcanoObjs = {}
+local VolcanoTypeMap = {}
+local function BuildVolcanoList()
+    local groups = {}
+    local order = {}
+    local eggs = CollectEggs()
+    for _, e in ipairs(eggs) do
+        if GetEggValue(e.Obj.Name) == 2500000000000 then
+            local full = OfficialFull(e.Obj.Name)
+            local q = GetQualityOf(e.Obj)
+            local qz = q and TranslateMap[q] or q
+            local gkey = q and (full .. "(" .. qz .. ")") or full
+            local g = groups[gkey]
+            if not g then
+                g = { count = 0, obj = e.Obj }
+                groups[gkey] = g
+                order[#order + 1] = gkey
+            end
+            g.count = g.count + 1
+            g.obj = e.Obj
+        end
+    end
+    local list = {}
+    local objs = {}
+    local types = {}
+    for _, gkey in ipairs(order) do
+        local g = groups[gkey]
+        local key = gkey .. "(" .. g.count .. ")"
+        list[#list + 1] = key
+        objs[key] = g.obj
+        types[key] = gkey:gsub("%(.*%)$", "")
+    end
+    VolcanoNames = list
+    VolcanoObjs = objs
+    VolcanoTypeMap = types
     return list
 end
 
@@ -906,22 +1242,38 @@ local function AddESP(obj)
     hl.OutlineColor = Color3.fromRGB(255, 255, 0)
     hl.Adornee = obj
     hl.Parent = obj
+    local anchor = obj:IsA("BasePart") and obj or obj:FindFirstChildWhichIsA("BasePart", true)
+    if not anchor then anchor = obj end
     local gui = Instance.new("BillboardGui")
-    gui.Size = UDim2.new(0, 160, 0, 30)
+    gui.Size = UDim2.new(0, 160, 0, 56)
     gui.AlwaysOnTop = true
     gui.MaxDistance = 500
-    gui.Adornee = obj
+    gui.StudsOffset = Vector3.new(0, 3, 0)
+    gui.Adornee = anchor
     local label = Instance.new("TextLabel")
-    label.Size = UDim2.new(1, 0, 1, 0)
+    label.Size = UDim2.new(1, 0, 0, 34)
     label.BackgroundTransparency = 1
     label.Text = DisplayName(obj) or ""
-    label.TextColor3 = Color3.fromRGB(255, 255, 0)
+    label.TextColor3 = Color3.fromRGB(255, 255, 255)
     label.TextStrokeTransparency = 0
     label.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
     label.Font = Enum.Font.SourceSansBold
     label.TextSize = 12
     label.Parent = gui
-    gui.Parent = obj
+    local q = GetQualityOf(obj)
+    local qLabel = Instance.new("TextLabel")
+    qLabel.Position = UDim2.new(0, 0, 0, 34)
+    qLabel.Size = UDim2.new(1, 0, 0, 22)
+    qLabel.BackgroundTransparency = 1
+    qLabel.Text = (q and TranslateMap[q]) or q or ""
+    qLabel.TextColor3 = q and QualityColors[q] or Color3.fromRGB(255, 255, 255)
+    qLabel.TextStrokeTransparency = 0
+    qLabel.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
+    qLabel.Font = Enum.Font.SourceSansBold
+    qLabel.TextSize = 10
+    qLabel.Parent = gui
+    gui.Parent = anchor
+    tag.Quality = q
     tag.Highlight = hl
     tag.Gui = gui
     tag.Snapshot = SnapshotParts(obj)
@@ -986,8 +1338,7 @@ local function WatchFolder(folder)
         local part = child:IsA("BasePart") and child or child:FindFirstChildWhichIsA("BasePart")
         if part and IsAliveEgg(child) then
             AddESP(child)
-        end
-        if child:IsA("Model") or child:IsA("Folder") then
+        elseif child:IsA("Model") or child:IsA("Folder") then
             WatchFolder(child)
         end
     end)
@@ -1040,6 +1391,14 @@ end)
 local function GetInterval()
     return 1
 end
+local VolcanoEntranceCoord = Vector3.new(-4950.240723, 41275.976562, -3673.967773)
+local VolcanoReturnCoord = Vector3.new(-4929.169434, 41278.230469, -3686.674561)
+local VolcanoEntryA = Vector3.new(-4928.673828, 41276.207031, -3696.049805)
+local VolcanoMidB = Vector3.new(-4960.288574, 41278.105469, -3662.760010)
+local VolcanoManualEggC = Vector3.new(-5325.944824, 40912.410156, -3574.948730)
+local VolcanoEggCoord = Vector3.new(-5321.760742, 40912.421875, -3571.401855)
+local VolcanoTopCoord = Vector3.new(-5114.554688, 41404.617188, -3472.936035)
+local VolcanoOutPos = Vector3.new(-4931.401855, 41280.886719, -3688.148438)
 
 task.spawn(function()
     while true do
@@ -1077,10 +1436,54 @@ task.spawn(function()
     end
 end)
 
-local AutoBox = Tabs.Main:AddLeftGroupbox("自动功能")
+task.spawn(function()
+    while true do
+        task.wait(GetInterval())
+        if Toggles.Offline and Toggles.Offline.Value and OfflineEarnings then
+            pcall(function()
+                OfflineEarnings:FireServer()
+            end)
+        end
+    end
+end)
+
+local RadarList = {
+    { Key = "RadarAdv", Name = "Advanced Radar" },
+    { Key = "RadarJewel", Name = "Jewel Radar" },
+    { Key = "RadarRoyal", Name = "Royal Radar" },
+    { Key = "RadarMagic", Name = "Magic Radar" },
+    { Key = "RadarAngelic", Name = "Angelic Radar" },
+    { Key = "RadarEternal", Name = "Eternal Radar" },
+    { Key = "RadarNameTag", Name = "NameTag" },
+}
+local RadarSent = {}
+task.spawn(function()
+    while true do
+        task.wait(0.2)
+        for _, item in ipairs(RadarList) do
+            local t = Toggles[item.Key]
+            local want = t and t.Value or false
+            if RadarSent[item.Key] ~= want then
+                RadarSent[item.Key] = want
+                if Autobuy then
+                    pcall(function()
+                        Autobuy:FireServer("Gears", item.Name, want)
+                    end)
+                end
+            end
+        end
+    end
+end)
+
+local NoticeBox = Tabs.Notice:AddLeftGroupbox("公告")
+local NoticeLabel = NoticeBox:AddLabel("10月4日: 垃圾游戏已绕过距离检测反作弊")
+NoticeLabel.TextLabel.TextColor3 = Color3.fromRGB(255, 0, 0)
+local AutoBox = Tabs.Main:AddLeftGroupbox("自动化")
 Toggles.Luck = AutoBox:AddToggle("Luck", { Text = "升级运气", Default = false })
 Toggles.Money = AutoBox:AddToggle("Money", { Text = "自动领钱", Default = false })
 Toggles.Rebirth = AutoBox:AddToggle("Rebirth", { Text = "自动重生", Default = false })
+Toggles.Offline = AutoBox:AddToggle("Offline", { Text = "自动领离线收益", Default = false })
+Toggles.Optimize = AutoBox:AddToggle("Optimize", { Text = "防卡顿优化", Default = false })
 local function UniqueEggFulls()
     local seen = {}
     local list = {}
@@ -1094,18 +1497,289 @@ local function UniqueEggFulls()
     return list
 end
 local eggValues = UniqueEggFulls()
-Toggles.AutoPick = AutoBox:AddToggle("AutoPick", { Text = "自动拾取", Default = false })
-Toggles.AutoTP = AutoBox:AddToggle("AutoTP", { Text = "自动飞行蛋", Default = false })
-Options.FlySpeed = AutoBox:AddSlider("FlySpeed", { Text = "飞行速度", Min = 1, Max = 1000, Default = 400, Rounding = 1 })
-Options.DelayTime = AutoBox:AddSlider("DelayTime", { Text = "停留秒数", Min = 1, Max = 10, Default = 3, Rounding = 1 })
-Options.AutoEgg = AutoBox:AddDropdown("AutoEgg", { Text = "选择飞行蛋", Values = #eggValues > 0 and eggValues or { "无蛋" }, Default = 1, Multi = true })
+local HangBox = Tabs.Farm:AddLeftGroupbox("挂机")
+Toggles.AutoPick = HangBox:AddToggle("AutoPick", { Text = "自动拾取", Default = false })
+Toggles.AutoTP = HangBox:AddToggle("AutoTP", { Text = "自动飞行蛋(2选1,开自动拾取)", Default = false })
+Toggles.AutoTP2 = HangBox:AddToggle("AutoTP2", { Text = "自动传送蛋(2选1,开自动拾取)", Default = false })
+Options.FlySpeed = HangBox:AddSlider("FlySpeed", { Text = "飞行速度", Min = 1000, Max = 2000, Default = 1500, Rounding = 1 })
+Options.DelayTime = HangBox:AddSlider("DelayTime", { Text = "停留秒数", Min = 0.05, Max = 10, Default = 3, Rounding = 2 })
+Options.AutoEgg = HangBox:AddDropdown("AutoEgg", { Text = "选择蛋", Values = #eggValues > 0 and eggValues or { "无蛋" }, Default = 1, Multi = true })
+local VolcanoActive = false
+local LastVolcanoRun = 0
+
+local VolcanoRunXD = nil
+local function VolcanoFindEggXD()
+    local re = workspace:FindFirstChild("RenderedEggs")
+    if re then
+        local egg = re:FindFirstChild("Volcanic Egg")
+        if egg and egg:IsA("Model") then
+            return egg
+        end
+        for _, c in ipairs(re:GetChildren()) do
+            if c:IsA("Model") and (c.Name:lower():find("volcanic") or GetEggValue(c.Name) == 2500000000000) then
+                return c
+            end
+        end
+    end
+    local root = GetRoot()
+    local best, bestD = nil, math.huge
+    for _, e in ipairs(CollectEggs()) do
+        if GetEggValue(e.Obj.Name) == 2500000000000 then
+            local d = root and (e.Pos - root.Position).Magnitude or 0
+            if d < bestD then
+                bestD = d
+                best = e
+            end
+        end
+    end
+    return best and best.Obj or nil
+end
+local function VolcanoPartPos(v)
+    if not v then return nil end
+    if v:IsA("BasePart") then return v.Position end
+    local p = v:FindFirstChildWhichIsA("BasePart")
+    return p and p.Position or nil
+end
+local function VolcanoEggTopPos(egg)
+    local ep = nil
+    if egg:IsA("BasePart") then
+        ep = egg.Position
+    else
+        local ok, p = pcall(function()
+            return egg:GetPivot().Position
+        end)
+        if ok then ep = p end
+    end
+    if not ep then
+        local part = egg:FindFirstChildWhichIsA("BasePart")
+        if part then ep = part.Position end
+    end
+    return ep
+end
+local function VolcanoPickPrompt(egg)
+    if not egg then return false end
+    local prompt = egg:FindFirstChildWhichIsA("ProximityPrompt", true)
+    if prompt then
+        pcall(function()
+            fireproximityprompt(prompt, prompt.HoldDuration)
+        end)
+        return true
+    end
+    local root = GetRoot()
+    if root then
+        for _, v in ipairs(workspace:GetDescendants()) do
+            if v.ClassName == "ProximityPrompt" and v.Parent then
+                local part = FindPromptPart(v)
+                if part and (part.Position - root.Position).Magnitude <= 15 then
+                    pcall(function()
+                        fireproximityprompt(v, v.HoldDuration)
+                    end)
+                end
+            end
+        end
+    end
+    return true
+end
+local function VolcanoReturnHome()
+    if MyPlot then
+        local bp = MyPlot:FindFirstChild("Baseplate") or MyPlot:FindFirstChildWhichIsA("BasePart")
+        if bp and bp:IsA("BasePart") then
+            local root = GetRoot()
+            if root then
+                local sp = root.Position
+                local lp = bp.CFrame:PointToObjectSpace(sp)
+                local half = bp.Size / 2
+                local closest = Vector3.new(math.clamp(lp.X, -half.X, half.X), math.clamp(lp.Y, -half.Y, half.Y), math.clamp(lp.Z, -half.Z, half.Z))
+                local target = bp.CFrame:PointToWorldSpace(closest) + Vector3.new(0, 1, 0)
+                local dist = (target - sp).Magnitude
+                local dir = Vector3.new(target.X - sp.X, 0, target.Z - sp.Z)
+                if dir.Magnitude < 0.1 then dir = (target - sp).Unit end
+                if dir.Magnitude > 0 then dir = dir.Unit end
+                for i = 1, 10 do
+                    local wp = sp + dir * (dist * (i / 11))
+                    root = GetRoot()
+                    if root then
+                        root.CFrame = CFrame.new(wp + Vector3.new(0, 1, 0))
+                    end
+                    task.wait(1)
+                end
+                root = GetRoot()
+                if root then
+                    root.CFrame = CFrame.new(target)
+                end
+                return true
+            end
+        else
+            local home = MyPlot:IsA("BasePart") and MyPlot or MyPlot:FindFirstChildWhichIsA("BasePart")
+            if home then
+                DropAndGoHome(home)
+                return true
+            end
+        end
+    end
+    return false
+end
+local function VolcanoHold(pos, dur)
+    local t0 = os.clock()
+    while os.clock() - t0 < dur do
+        local root = GetRoot()
+        if root then
+            root.CFrame = CFrame.new(pos)
+            root.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+        end
+        task.wait(0.05)
+    end
+end
+local function VolcanoFlyTo(target, speed, keepNoclip)
+    local root = GetRoot()
+    if not root then return end
+    SetNoclip(true)
+    while true do
+        root = GetRoot()
+        if not root then break end
+        local diff = target - root.Position
+        local dist = diff.Magnitude
+        if dist < 1 then break end
+        local step = math.min(speed * 0.05, dist)
+        SetPos(root, root.Position + diff.Unit * step)
+        task.wait(0.05)
+    end
+    root = GetRoot()
+    if root then SetPos(root, target) end
+    if not keepNoclip then SetNoclip(false) end
+end
+VolcanoRunXD = function()
+    local root = GetRoot()
+    if not root then return false end
+    local vol = workspace:FindFirstChild("Volcano")
+    if not vol then return false end
+    pcall(function()
+        workspace:RequestStreamAroundAsync(vol:GetPivot().Position)
+    end)
+    root = GetRoot()
+    if not root then return false end
+    root.CFrame = CFrame.new(VolcanoOutPos + Vector3.new(0, 1, 0))
+    VolcanoHold(VolcanoOutPos + Vector3.new(0, 1, 0), 2)
+    VolcanoFlyTo(VolcanoEntranceCoord + Vector3.new(0, 1, 0), 200)
+    VolcanoFlyTo(VolcanoMidB + Vector3.new(0, 1, 0), 200)
+    root = GetRoot()
+    if root then VolcanoHold(root.Position, 2) end
+    local egg = VolcanoFindEggXD()
+    local ep = egg and VolcanoEggTopPos(egg) or VolcanoEggCoord
+    VolcanoFlyTo(ep + Vector3.new(0, 3, 0), 1000, true)
+    root = GetRoot()
+    if not root then return false end
+    local t1 = os.clock()
+    while not egg and os.clock() - t1 < 1 do
+        task.wait(0.25)
+        egg = VolcanoFindEggXD()
+    end
+    root = GetRoot()
+    if root and egg then
+        ep = VolcanoEggTopPos(egg)
+        VolcanoFlyTo(ep + Vector3.new(0, 3, 0), 1000, true)
+        VolcanoPickPrompt(egg)
+        task.wait(0.2)
+    end
+    VolcanoFlyTo(VolcanoMidB + Vector3.new(0, 1, 0), 200, true)
+    VolcanoFlyTo(VolcanoEntranceCoord + Vector3.new(0, 1, 0), 200, true)
+    VolcanoFlyTo(VolcanoOutPos + Vector3.new(0, 1, 0), 200)
+    if MyPlot then
+        local home = MyPlot:IsA("BasePart") and MyPlot or MyPlot:FindFirstChildWhichIsA("BasePart")
+        if home then
+            DropAndGoHome(home)
+        end
+    end
+    return true
+end
+
+local VolcanoBox = Tabs.Farm:AddRightGroupbox("火山顶变异蛋")
+Options.DipEgg = VolcanoBox:AddDropdown("DipEgg", { Text = "选择蛋", Values = #eggValues > 0 and eggValues or { "无蛋" }, Default = 1, Multi = true })
+Toggles.AutoDip = VolcanoBox:AddToggle("AutoDip", { Text = "自动火山顶变异蛋(开自动拾取)", Default = false })
+VolcanoBox:AddButton({ Text = "手动拿火山蛋(开自动拾取)", Func = function()
+    pcall(function()
+        VolcanoRunXD()
+    end)
+end })
+local function GetHomeEggs()
+    local list = {}
+    if not MyPlot then return list end
+    local eggsFolder = nil
+    local function findEggs(node, depth)
+        if eggsFolder then return end
+        for _, c in ipairs(node:GetChildren()) do
+            if c.Name == "Eggs" then
+                eggsFolder = c
+                return
+            end
+            if (c:IsA("Model") or c:IsA("Folder")) and (not depth or depth > 0) then
+                findEggs(c, depth and depth - 1 or nil)
+            end
+        end
+    end
+    findEggs(MyPlot, 3)
+    if not eggsFolder then return list end
+    local function walk(node)
+        for _, child in ipairs(node:GetChildren()) do
+            local pos = nil
+            if child:IsA("BasePart") then
+                pos = child.Position
+            else
+                local part = child:FindFirstChildWhichIsA("BasePart")
+                if part then pos = part.Position end
+            end
+            local alive = pos and IsAliveEggLight(child)
+            if alive then
+                list[#list + 1] = { Obj = child, Pos = pos }
+            elseif child:IsA("Model") or child:IsA("Folder") then
+                walk(child)
+            end
+        end
+    end
+    walk(eggsFolder)
+    return list
+end
+local function PartBelongsToEgg(part, egg)
+    local p = part
+    while p do
+        if p == egg.Obj then return true end
+        p = p.Parent
+    end
+    return false
+end
 local EggBox = Tabs.Main:AddRightGroupbox("蛋操作")
 Toggles.ESP = EggBox:AddToggle("ESP", { Text = "透视蛋", Default = false })
 Toggles.AutoRefresh = EggBox:AddToggle("AutoRefresh", { Text = "自动刷新列表", Default = true })
 
 local eggList = BuildEggList()
+local function LockToEgg(e, dur, untilGone)
+    local pos = EggTopPos(e)
+    task.spawn(function()
+        local t0 = os.clock()
+        local limit = dur or 0.5
+        while os.clock() - t0 < limit do
+            local root = GetRoot()
+            if not root then break end
+            SetPos(root, pos)
+            if untilGone and e.Obj and not e.Obj.Parent then break end
+            task.wait(0.02)
+        end
+    end)
+end
+local function LockToPos(pos, dur)
+    task.spawn(function()
+        local t0 = os.clock()
+        local limit = dur or 0.5
+        while os.clock() - t0 < limit do
+            local root = GetRoot()
+            if not root then break end
+            SetPos(root, pos)
+            task.wait(0.02)
+        end
+    end)
+end
 Options.EggSelect = EggBox:AddDropdown("EggSelect", { Text = "传送蛋（数字代表蛋的数量）", Values = #eggList > 0 and eggList or { "无蛋" }, Default = 1, Multi = false })
-EggBox:AddButton({ Text = "传送当前选择蛋", Func = function()
+EggBox:AddButton({ Text = "传送最近蛋", Func = function()
     local key = Options.EggSelect.Value
     local e = nil
     if key and EggTypeMap[key] then
@@ -1116,20 +1790,656 @@ EggBox:AddButton({ Text = "传送当前选择蛋", Func = function()
     end
     if e then
         pcall(function()
-            TPTo(e.Pos + Vector3.new(0, 1, 0))
+            TPTo(EggTopPos(e))
         end)
+        LockToEgg(e)
     end
 end })
 EggBox:AddButton({ Text = "传送最高价值蛋", Func = function()
     local e = GetHighestValueEgg()
     if not e then return end
-    TPTo(e.Pos + Vector3.new(0, 1, 0))
+    TPTo(EggTopPos(e))
+    LockToEgg(e)
 end })
 
-local PlotBox = Tabs.Main:AddRightGroupbox("传送点")
+local function MkVec(x, y, z)
+    local ok, v = pcall(function()
+        return vector.create(x, y, z)
+    end)
+    if ok and v then return v end
+    return Vector3.new(x, y, z)
+end
+local function RandomPlotPos()
+    local bp = nil
+    if MyPlot then
+        bp = MyPlot:FindFirstChild("Baseplate")
+        if not bp then
+            bp = MyPlot:FindFirstChildWhichIsA("BasePart")
+        end
+    end
+    if not bp then
+        local plots = workspace:FindFirstChild("Plots")
+        if plots then
+            for _, c in ipairs(plots:GetChildren()) do
+                local owner = GetPlotOwner(c)
+                if owner and (owner == LP.Name or (owner:match("^%d+$") and owner == tostring(LP.UserId))) then
+                    bp = c:FindFirstChild("Baseplate") or c:FindFirstChildWhichIsA("BasePart")
+                    if bp then break end
+                end
+            end
+        end
+    end
+    if bp then
+        local sz = bp.Size
+        local p = bp.Position
+        local hw = math.max(sz.X / 2 - 2, 1)
+        local hd = math.max(sz.Z / 2 - 2, 1)
+        local x = p.X + (math.random() * 2 - 1) * hw
+        local z = p.Z + (math.random() * 2 - 1) * hd
+        return MkVec(x, p.Y + 1.5, z)
+    end
+    return MkVec(73.46701049804688, 40312.4921875, 812.1331176757812)
+end
+
+local function GetEggPlaced()
+    local ok, ep = pcall(function()
+        return ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("Game"):WaitForChild("EggPlaced", 5)
+    end)
+    if ok and ep then return ep end
+    return nil
+end
+
+local function GetBackpackGui()
+    local pg = LP:FindFirstChild("PlayerGui")
+    return pg and pg:FindFirstChild("BackpackGui")
+end
+local function GetHotbarSlots()
+    local out = {}
+    local bg = GetBackpackGui()
+    local hb = bg and bg:FindFirstChild("Backpack") and bg.Backpack:FindFirstChild("Hotbar")
+    if not hb then return out end
+    for i = 1, 10 do
+        local s = hb:FindFirstChild(tostring(i))
+        if s then out[#out + 1] = s end
+    end
+    return out
+end
+local function GetInvSlots()
+    local out = {}
+    local bg = GetBackpackGui()
+    local inv = bg and bg:FindFirstChild("Backpack") and bg.Backpack:FindFirstChild("Inventory")
+    local sf = inv and inv:FindFirstChild("ScrollingFrame")
+    local grid = sf and sf:FindFirstChild("UIGridFrame")
+    if grid then
+        for _, c in ipairs(grid:GetChildren()) do
+            if c:IsA("GuiObject") then
+                out[#out + 1] = c
+            end
+        end
+    end
+    return out
+end
+local inputHookDone = false
+local function ClickSlot(slot)
+    if not slot then return false end
+    local clicked = false
+    local function TryClick(n)
+        if not n:IsA("GuiButton") then return end
+        pcall(function()
+            n:Click()
+        end)
+        clicked = true
+    end
+    TryClick(slot)
+    if not clicked then
+        for _, d in ipairs(slot:GetDescendants()) do
+            if d:IsA("GuiButton") then
+                TryClick(d)
+            end
+        end
+    end
+    pcall(function()
+        local ac = slot.AbsolutePosition
+        local sz = slot.AbsoluteSize
+        if ac and sz and sz.X > 0 and sz.Y > 0 then
+            local cx = ac.X + sz.X / 2
+            local cy = ac.Y + sz.Y / 2
+            local moved = false
+            if type(_G.mousemove) == "function" then
+                pcall(function() _G.mousemove(cx, cy) end); moved = true
+            elseif type(_G.mousemoveabs) == "function" then
+                pcall(function() _G.mousemoveabs(cx, cy) end); moved = true
+            elseif type(_G.setcursorpos) == "function" then
+                pcall(function() _G.setcursorpos(cx, cy) end); moved = true
+            elseif type(_G.setmouseposition) == "function" then
+                pcall(function() _G.setmouseposition(cx, cy) end); moved = true
+            elseif type(_G.mousemoverel) == "function" then
+                pcall(function() _G.mousemoverel(cx, cy) end); moved = true
+            end
+            if moved then task.wait(0.06) end
+            if type(_G.mouse1click) == "function" then
+                pcall(function() _G.mouse1click() end)
+                clicked = true
+                task.wait(0.06)
+                pcall(function() _G.mouse1click() end)
+                clicked = true
+            end
+            if type(_G.fireinput) == "function" then
+                pcall(function()
+                    local obj = Instance.new("InputObject")
+                    obj.UserInputType = Enum.UserInputType.MouseButton1
+                    obj.InputState = Enum.InputState.Begin
+                    obj.Position = Vector3.new(cx, cy, 0)
+                    _G.fireinput(obj)
+                    task.wait(0.06)
+                    obj.InputState = Enum.InputState.End
+                    _G.fireinput(obj)
+                    clicked = true
+                end)
+            end
+            pcall(function()
+                local vim = game:GetService("VirtualInputManager")
+                vim:SendMouseMoveEvent(cx, cy, 0)
+                task.wait(0.05)
+                vim:SendMouseButtonEvent(cx, cy, 0, true, Enum.UserInputType.MouseButton1, false)
+                task.wait(0.05)
+                vim:SendMouseButtonEvent(cx, cy, 0, false, Enum.UserInputType.MouseButton1, false)
+                clicked = true
+            end)
+            pcall(function()
+                local vim = game:GetService("VirtualInputManager")
+                vim:SendTouchEvent(1, Vector2.new(cx, cy), Enum.TouchState.Began, false)
+                task.wait(0.06)
+                vim:SendTouchEvent(1, Vector2.new(cx, cy), Enum.TouchState.Ended, false)
+                clicked = true
+            end)
+        end
+    end)
+    return clicked
+end
+local function OpenBackpack()
+    local bg = GetBackpackGui()
+    if not bg then return end
+    local bp = bg:FindFirstChild("Backpack")
+    local hb = bp and bp:FindFirstChild("Hotbar")
+    local btn = hb and hb:FindFirstChild("BackpackButton")
+    if not (btn and btn:IsA("GuiButton")) then return end
+    local function InvVisible()
+        local inv = bp and bp:FindFirstChild("Inventory")
+        local sf = inv and inv:FindFirstChild("ScrollingFrame")
+        return sf and sf.Visible == true
+    end
+    if not InvVisible() then
+        pcall(function()
+            btn:Click()
+        end)
+        task.wait(0.4)
+    end
+    if not InvVisible() then
+        pcall(function()
+            btn:Click()
+        end)
+        task.wait(0.4)
+    end
+end
+local UIS = game:GetService("UserInputService")
+local probeCount = {}
+local probeConn = nil
+do
+    local ok, uis = pcall(function() return game:GetService("UserInputService") end)
+    if ok and uis then
+        probeConn = uis.InputBegan:Connect(function(input, gpe)
+            if gpe then return end
+            local t = "?"
+            pcall(function() t = tostring(input.UserInputType) end)
+            probeCount[t] = (probeCount[t] or 0) + 1
+        end)
+    end
+end
+local function ProbeSummary()
+    local parts = {}
+    for k, v in pairs(probeCount) do
+        parts[#parts + 1] = k .. ":" .. v
+    end
+    table.sort(parts)
+    return table.concat(parts, " ")
+end
+local function SlotState(slot)
+    local ok, v = pcall(function() return slot.Selected end)
+    if ok and type(v) == "boolean" then
+        return v and "选中" or "未选"
+    end
+    local ok2, v2 = pcall(function() return slot.Visible end)
+    if ok2 then return "vis=" .. tostring(v2) end
+    return "?"
+end
+local function SlotCenter(slot)
+    local ac = slot.AbsolutePosition
+    local sz = slot.AbsoluteSize
+    if not (ac and sz and sz.X > 0 and sz.Y > 0) then
+        error("格子无有效尺寸")
+    end
+    return ac.X + sz.X / 2, ac.Y + sz.Y / 2
+end
+local function TrySlotClick(slot, label)
+    local before = SlotState(slot)
+    local function Run(name, fn)
+        local ok, err = pcall(fn)
+        task.wait(0.12)
+    end
+    Run("Click", function()
+        if slot:IsA("GuiButton") then slot:Click() end
+        for _, d in ipairs(slot:GetDescendants()) do
+            if d:IsA("GuiButton") then d:Click() end
+        end
+    end)
+    Run("mousemove+click", function()
+        local cx, cy = SlotCenter(slot)
+        local moved = false
+        if type(_G.mousemove) == "function" then pcall(function() _G.mousemove(cx, cy) end); moved = true
+        elseif type(_G.mousemoveabs) == "function" then pcall(function() _G.mousemoveabs(cx, cy) end); moved = true
+        elseif type(_G.setcursorpos) == "function" then pcall(function() _G.setcursorpos(cx, cy) end); moved = true
+        elseif type(_G.setmouseposition) == "function" then pcall(function() _G.setmouseposition(cx, cy) end); moved = true
+        end
+        if not moved then error("无鼠标移动API") end
+        task.wait(0.08)
+        if type(_G.mouse1click) == "function" then
+            pcall(function() _G.mouse1click() end)
+            task.wait(0.06)
+            pcall(function() _G.mouse1click() end)
+        end
+    end)
+    Run("fireinput", function()
+        if type(_G.fireinput) ~= "function" then error("无fireinput") end
+        local cx, cy = SlotCenter(slot)
+        local obj = Instance.new("InputObject")
+        obj.UserInputType = Enum.UserInputType.MouseButton1
+        obj.InputState = Enum.InputState.Begin
+        obj.Position = Vector3.new(cx, cy, 0)
+        _G.fireinput(obj)
+        task.wait(0.08)
+        obj.InputState = Enum.InputState.End
+        _G.fireinput(obj)
+    end)
+    Run("VIM鼠标", function()
+        local vim = game:GetService("VirtualInputManager")
+        local cx, cy = SlotCenter(slot)
+        vim:SendMouseMoveEvent(cx, cy, 0)
+        task.wait(0.06)
+        vim:SendMouseButtonEvent(cx, cy, 0, true, Enum.UserInputType.MouseButton1, false)
+        task.wait(0.06)
+        vim:SendMouseButtonEvent(cx, cy, 0, false, Enum.UserInputType.MouseButton1, false)
+    end)
+    Run("VIM触摸", function()
+        local vim = game:GetService("VirtualInputManager")
+        local cx, cy = SlotCenter(slot)
+        vim:SendTouchEvent(1, Vector2.new(cx, cy), Enum.TouchState.Began, false)
+        task.wait(0.08)
+        vim:SendTouchEvent(1, Vector2.new(cx, cy), Enum.TouchState.Ended, false)
+    end)
+    Run("firesignal", function()
+        local fired = 0
+        local function TryFire(name)
+            local ok, sig = pcall(function() return slot[name] end)
+            if ok and sig then
+                local okc, conns = pcall(getconnections, sig)
+                if okc and type(conns) == "table" and #conns > 0 then
+                    for _, cn in ipairs(conns) do
+                        pcall(function() cn:Fire() end)
+                        fired = fired + 1
+                    end
+                end
+            end
+        end
+        TryFire("MouseButton1Click")
+        TryFire("MouseButton1Down")
+        TryFire("Activated")
+        if fired == 0 then error("无可用连接") end
+    end)
+end
+local function DiagnoseClick()
+    OpenBackpack()
+    task.wait(0.5)
+    local hs = GetHotbarSlots()
+    local iv = GetInvSlots()
+    if #hs > 0 then
+        TrySlotClick(hs[1], "H1")
+        return
+    end
+    if #iv > 0 then
+        TrySlotClick(iv[1], "I1")
+        return
+    end
+end
+
+local dbgCount = 0
+local function DBG(msg)
+    dbgCount = dbgCount + 1
+end
+local capCount = 0
+local grabSeen = nil
+local GRAB_WHITE = { EggPlaced = true, PetCollect = true, Ping = true, PlayerActivity = true, Autobuy = true, Upgrades = true, Rebirth = true, OfflineEarnings = true, PlacePet = true, VolcanoDip = true, RequestPlotEggs = true, RadarState = true, GameLoaded = true }
+if type(hookmetamethod) == "function" and type(getnamecallmethod) == "function" then
+    local oldHook
+    oldHook = hookmetamethod(game, "__namecall", newcclosure(function(self, ...)
+        local method = getnamecallmethod()
+        if method == "FireServer" or method == "InvokeServer" then
+            local nm = "?"
+            pcall(function() nm = self.Name end)
+            local a1 = ...
+            local t1 = type(a1)
+            local s1 = tostring(a1)
+            if GRAB_WHITE[nm] then
+                return oldHook(self, ...)
+            end
+            capCount = capCount + 1
+            local n = select("#", ...)
+            if capCount <= 30 then
+                local pr = "?"
+                pcall(function() pr = self.Parent and self.Parent.Name end)
+            end
+            if t1 == "string" and s1:match("^%x%x%x%x%x%x%x%x%-") and not grabSeen then
+                grabSeen = { obj = self, name = nm, args = { ... } }
+            end
+        end
+        return oldHook(self, ...)
+    end))
+end
+local function SlotInfo(slot)
+    local text, sel = "?", "?"
+    pcall(function() text = slot.Text end)
+    pcall(function() sel = slot.Selected end)
+    return tostring(text), tostring(sel)
+end
+local function DumpSlotData(slot, tag)
+    local info = { tag, slot.ClassName, slot.Name }
+    pcall(function() info[#info + 1] = "Text=" .. tostring(slot.Text) end)
+    pcall(function() info[#info + 1] = "Image=" .. tostring(slot.Image) end)
+    pcall(function() info[#info + 1] = "LayoutOrder=" .. tostring(slot.LayoutOrder) end)
+    pcall(function() info[#info + 1] = "Visible=" .. tostring(slot.Visible) end)
+    pcall(function()
+        for k, v in pairs(slot:GetAttributes()) do
+            info[#info + 1] = "attr:" .. tostring(k) .. "=" .. tostring(v)
+        end
+    end)
+    for _, c in ipairs(slot:GetChildren()) do
+        local ci = { "child:" .. c.ClassName .. ":" .. c.Name }
+        pcall(function()
+            if c:IsA("TextLabel") or c:IsA("TextButton") then
+                ci[#ci + 1] = "Text=" .. tostring(c.Text)
+            end
+        end)
+        pcall(function()
+            if c:IsA("ImageLabel") or c:IsA("ImageButton") then
+                ci[#ci + 1] = "Image=" .. tostring(c.Image)
+            end
+        end)
+        pcall(function()
+            if c:IsA("ValueBase") then
+                ci[#ci + 1] = "Val=" .. tostring(c.Value)
+            end
+        end)
+        pcall(function()
+            for k, v in pairs(c:GetAttributes()) do
+                ci[#ci + 1] = "attr:" .. tostring(k) .. "=" .. tostring(v)
+            end
+        end)
+        if c:IsA("Frame") or c:IsA("ScrollingFrame") or c:IsA("ViewportFrame") then
+            for _, g in ipairs(c:GetChildren()) do
+                ci[#ci + 1] = "g:" .. g.ClassName .. ":" .. g.Name
+                pcall(function()
+                    if g:IsA("TextLabel") then ci[#ci + 1] = "t=" .. tostring(g.Text) end
+                end)
+                pcall(function()
+                    if g:IsA("ImageLabel") then ci[#ci + 1] = "img=" .. tostring(g.Image) end
+                end)
+                pcall(function()
+                    if g:IsA("ValueBase") then ci[#ci + 1] = "val=" .. tostring(g.Value) end
+                end)
+            end
+        end
+        info[#info + 1] = table.concat(ci, " ")
+    end
+end
+local function PlantFromSlots()
+    local ep = GetEggPlaced()
+    if not ep then DBG("远程EggPlaced未找到"); return false end
+    if not grabSeen then
+        DBG("未学到拿取远程：请在背包里手动点一次蛋格子，等[★抓取]行出现后再开自动放蛋")
+        return false
+    end
+    OpenBackpack()
+    local hs = GetHotbarSlots()
+    local iv = GetInvSlots()
+    local function ScanSlot(slot, tag)
+        local uuids = {}
+        local seen = {}
+        local lines = {}
+        local function push(v)
+            if type(v) == "string" and v:match("^%x%x%x%x%x%x%x%x%-") and not seen[v] then
+                seen[v] = true
+                uuids[#uuids + 1] = v
+            end
+        end
+        local function walk(n, depth, prefix)
+            if depth > 5 then return end
+            local ln = prefix .. n.ClassName .. ":" .. n.Name
+            pcall(function()
+                if n:IsA("TextLabel") or n:IsA("TextButton") then ln = ln .. " T=" .. tostring(n.Text) end
+            end)
+            pcall(function()
+                if n:IsA("ImageLabel") or n:IsA("ImageButton") then ln = ln .. " IMG=" .. tostring(n.Image) end
+            end)
+            pcall(function()
+                if n:IsA("ValueBase") then ln = ln .. " V=" .. tostring(n.Value) end
+            end)
+            pcall(function()
+                local attrs = n:GetAttributes()
+                for k, v in pairs(attrs) do
+                    ln = ln .. " A:" .. tostring(k) .. "=" .. tostring(v)
+                    push(tostring(v))
+                end
+            end)
+            push(n.Name)
+            push(n.Image)
+            lines[#lines + 1] = ln
+            for _, c in ipairs(n:GetChildren()) do
+                walk(c, depth + 1, prefix .. "  ")
+            end
+        end
+        walk(slot, 0, "")
+        pcall(function()
+            for _, d in ipairs(slot:GetDescendants()) do
+                if d:IsA("Model") then
+                    push(d.Name)
+                    lines[#lines + 1] = "MODEL:" .. d.Name
+                end
+            end
+        end)
+        return uuids, lines
+    end
+    local function FireGrab(uuid)
+        local args = {}
+        local n = select("#", unpack(grabSeen.args))
+        for i = 1, n do
+            args[i] = select(i, unpack(grabSeen.args))
+        end
+        if n >= 1 then args[1] = uuid end
+        local ok = pcall(function()
+            grabSeen.obj:FireServer(unpack(args))
+        end)
+        DBG("直发拿取 " .. grabSeen.name .. " uuid=" .. uuid .. " ok=" .. tostring(ok))
+        return ok
+    end
+    local dumpCount = 0
+    local function TryPlant(slot, tag)
+        local uuids, lines = ScanSlot(slot, tag)
+        if #uuids == 0 then
+            DBG(tag .. " 无UUID 跳过")
+            if dumpCount < 2 then
+                dumpCount = dumpCount + 1
+                pcall(function()
+                    if makefolder and not isfolder("骑宠物") then makefolder("骑宠物") end
+                    writefile("骑宠物/格子数据.txt", tag .. "\n" .. table.concat(lines, "\n"))
+                end)
+            end
+            return false
+        end
+        local planted = false
+        for _, uuid in ipairs(uuids) do
+            if not FireGrab(uuid) then break end
+            task.wait(0.35)
+            local pos = RandomPlotPos()
+            local args = {
+                [1] = {
+                    ["PlantPosition"] = pos
+                }
+            }
+            local okEp = pcall(function()
+                ep:FireServer(unpack(args))
+            end)
+            DBG(tag .. " 放置 uuid=" .. uuid .. " epOk=" .. tostring(okEp))
+            planted = true
+            task.wait(0.3)
+        end
+        return planted
+    end
+    local done = 0
+    for i, slot in ipairs(hs) do
+        if TryPlant(slot, "H" .. tostring(i)) then done = done + 1 end
+        task.wait(0.15)
+    end
+    for i = 1, math.min(#iv, 30) do
+        if TryPlant(iv[i], "I" .. tostring(i)) then done = done + 1 end
+        task.wait(0.15)
+    end
+    DBG("本轮拿取放置完成 done=" .. done)
+    return done > 0
+end
+
+local function QuietClick(slot)
+    local fired = 0
+    local function TryFire(name)
+        local ok, sig = pcall(function() return slot[name] end)
+        if ok and sig then
+            local okc, conns = pcall(getconnections, sig)
+            if okc and type(conns) == "table" and #conns > 0 then
+                for _, cn in ipairs(conns) do
+                    pcall(function() cn:Fire() end)
+                    fired = fired + 1
+                end
+            end
+        end
+    end
+    TryFire("MouseButton1Click")
+    TryFire("MouseButton1Down")
+    TryFire("Activated")
+    if fired > 0 then return true end
+    pcall(function()
+        if slot:IsA("GuiButton") then slot:Click() end
+        for _, d in ipairs(slot:GetDescendants()) do
+            if d:IsA("GuiButton") then d:Click() end
+        end
+    end)
+    pcall(function()
+        local vim = game:GetService("VirtualInputManager")
+        local cx, cy = SlotCenter(slot)
+        vim:SendMouseMoveEvent(cx, cy, 0)
+        task.wait(0.05)
+        vim:SendMouseButtonEvent(cx, cy, 0, true, Enum.UserInputType.MouseButton1, false)
+        task.wait(0.05)
+        vim:SendMouseButtonEvent(cx, cy, 0, false, Enum.UserInputType.MouseButton1, false)
+    end)
+    return fired > 0
+end
+local function SlotIsEgg(slot)
+    local buf = ""
+    pcall(function()
+        local function add(t)
+            if t and t ~= "" and t ~= " " and t ~= "?" then
+                buf = buf .. " " .. tostring(t)
+            end
+        end
+        add(slot.Text)
+        add(slot.Name)
+        for _, d in ipairs(slot:GetDescendants()) do
+            if d:IsA("TextLabel") or d:IsA("TextButton") then
+                add(d.Text)
+            elseif (d:IsA("ImageLabel") or d:IsA("ImageButton")) and d.Name then
+                add(d.Name)
+            end
+        end
+    end)
+    if buf == "" then return false end
+    if buf:find("蛋", 1, true) then return true end
+    local nk = NormalName(buf)
+    for _, n in ipairs(AllEggNames) do
+        local an = NormalName(n)
+        if nk == an or nk:find(an, 1, true) or an:find(nk, 1, true) then
+            return true
+        end
+    end
+    return false
+end
+local function PointLoopOnce()
+    OpenBackpack()
+    task.wait(0.4)
+    local ep = GetEggPlaced()
+    local hs = GetHotbarSlots()
+    local iv = GetInvSlots()
+    local function SpamPlant()
+        if not ep then return end
+        local pos = RandomPlotPos()
+        local args = { [1] = { ["PlantPosition"] = pos } }
+        pcall(function()
+            ep:FireServer(unpack(args))
+        end)
+    end
+    for i, slot in ipairs(hs) do
+        if not (Toggles.PointClick and Toggles.PointClick.Value) then break end
+        QuietClick(slot)
+        for _ = 1, 8 do SpamPlant() end
+        task.wait(0.15)
+    end
+    for i, slot in ipairs(iv) do
+        if not (Toggles.PointClick and Toggles.PointClick.Value) then break end
+        QuietClick(slot)
+        for _ = 1, 8 do SpamPlant() end
+        task.wait(0.15)
+    end
+end
+task.spawn(function()
+    while true do
+        task.wait(0.15)
+        if Toggles.PointClick and Toggles.PointClick.Value then
+            PointLoopOnce()
+            local ep = GetEggPlaced()
+            if ep then
+                local pos = RandomPlotPos()
+                local args = { [1] = { ["PlantPosition"] = pos } }
+                pcall(function()
+                    ep:FireServer(unpack(args))
+                end)
+            end
+        end
+    end
+end)
+
+Toggles.PointClick = EggBox:AddToggle("PointClick", { Text = "自动放蛋(首先你的物品栏和背包得要有蛋)", Default = false })
+
+local RadarBox = Tabs.Main:AddRightGroupbox("自动购买雷达")
+Toggles.RadarAdv = RadarBox:AddToggle("RadarAdv", { Text = "高级雷达", Default = false })
+Toggles.RadarJewel = RadarBox:AddToggle("RadarJewel", { Text = "宝石雷达", Default = false })
+Toggles.RadarRoyal = RadarBox:AddToggle("RadarRoyal", { Text = "皇家雷达", Default = false })
+Toggles.RadarMagic = RadarBox:AddToggle("RadarMagic", { Text = "魔法雷达", Default = false })
+Toggles.RadarAngelic = RadarBox:AddToggle("RadarAngelic", { Text = "天使雷达", Default = false })
+Toggles.RadarEternal = RadarBox:AddToggle("RadarEternal", { Text = "永恒雷达", Default = false })
+Toggles.RadarNameTag = RadarBox:AddToggle("RadarNameTag", { Text = "名牌雷达", Default = false })
+
+local PlotBox = Tabs.Main:AddLeftGroupbox("传送点")
 local plots = ScanPlots()
 Options.PlotSelect = PlotBox:AddDropdown("PlotSelect", { Text = "选择传送点", Values = #plots > 0 and plots or { "无传送点" }, Default = 1, Multi = false })
-PlotBox:AddButton({ Text = "传送到自家", Func = function()
+PlotBox:AddButton({ Text = "传送到我的家", Func = function()
     if MyPlot then
         local part = MyPlot:IsA("BasePart") and MyPlot or MyPlot:FindFirstChildWhichIsA("BasePart")
         if part then
@@ -1151,6 +2461,32 @@ PlotBox:AddButton({ Text = "传送", Func = function()
         end
     end
 end })
+PlotBox:AddButton({ Text = "传送到火山口", Func = function()
+    pcall(function()
+        TPTo(VolcanoEntranceCoord + Vector3.new(0, 1, 0))
+    end)
+end })
+PlotBox:AddButton({ Text = "传送到火山顶", Func = function()
+    pcall(function()
+        TPTo(VolcanoTopCoord + Vector3.new(0, 1, 0))
+    end)
+end })
+
+local PetBox = Tabs.Main:AddLeftGroupbox("宠物放置最佳位置")
+local defaultPetId = "1f7170d5-fff0-4173-95c1-34a9dd50d827"
+Toggles.PlaceBestPet = PetBox:AddToggle("PlaceBestPet", { Text = "自动放置最佳位置", Default = false })
+task.spawn(function()
+    while true do
+        task.wait(1)
+        if Toggles.PlaceBestPet and Toggles.PlaceBestPet.Value then
+            if PlacePet then
+                pcall(function()
+                    PlacePet:FireServer(defaultPetId, Vector3.new(57.463157653808594, 40316.42578125, 1016.2613525390625))
+                end)
+            end
+        end
+    end
+end)
 
 local lastPlotList = nil
 task.spawn(function()
@@ -1264,14 +2600,88 @@ if ThemeManager then
     end)
 end
 
+local LastTP2 = 0
 task.spawn(function()
     while true do
         task.wait(0.5)
-        if Toggles.AutoTP and Toggles.AutoTP.Value then
+        if Toggles.AutoTP2 and Toggles.AutoTP2.Value and not VolcanoActive then
             local set = GetCheckedSet()
             if next(set) then
                 local root = GetRoot()
-                if root and not Flying then
+                if root then
+                    if GoHome then
+                        if os.clock() - LastTP2 >= Options.DelayTime.Value then
+                            local homePart = nil
+                            if MyPlot then
+                                homePart = MyPlot:IsA("BasePart") and MyPlot or MyPlot:FindFirstChildWhichIsA("BasePart")
+                            end
+                            if homePart then
+                                local hp = homePart.Position
+                                if (root.Position - hp).Magnitude < 8 then
+                                    GoHome = false
+                                    LastTP2 = 0
+                                else
+                                    if DropAndGoHome(hp) then
+                                        GoHome = false
+                                        LastTP2 = 0
+                                    end
+                                end
+                            else
+                                GoHome = false
+                                LastTP2 = 0
+                            end
+                        end
+                    elseif os.clock() - LastTP2 >= Options.DelayTime.Value then
+                        local best, bestDist = nil, math.huge
+                        for _, e in ipairs(CollectEggs()) do
+                            local isVolcano = GetEggValue(e.Obj.Name) == 2500000000000
+                            if isVolcano or set[OfficialFull(e.Obj.Name)] then
+                                local d = (e.Pos - root.Position).Magnitude
+                                if isVolcano then d = d - 1e9 end
+                                if d < bestDist then
+                                    bestDist = d
+                                    best = e
+                                end
+                            end
+                        end
+                        if best then
+                            if GetEggValue(best.Obj.Name) == 2500000000000 then
+                                if os.clock() - LastVolcanoRun >= 3 then
+                                    LastVolcanoRun = os.clock()
+                                    VolcanoActive = true
+                                    pcall(function()
+                                        VolcanoRunXD()
+                                    end)
+                                    VolcanoActive = false
+                                end
+                            else
+                                LastTP2 = os.clock()
+                                pcall(function()
+                                    TPTo(EggTopPos(best))
+                                end)
+                                LockToEgg(best, Options.DelayTime.Value, true)
+                                GoHome = true
+                            end
+                        end
+                    end
+                end
+            end
+        else
+            if not (Toggles.AutoTP and Toggles.AutoTP.Value) then
+                GoHome = false
+            end
+        end
+    end
+end)
+
+task.spawn(function()
+    while true do
+        task.wait(0.5)
+        if Toggles.AutoTP and Toggles.AutoTP.Value and not (Toggles.AutoTP2 and Toggles.AutoTP2.Value) then
+            local set = GetCheckedSet()
+            if next(set) then
+                local root = GetRoot()
+                if root and not Flying and not VolcanoActive then
                     if GoHome then
                         if os.clock() - LastArrive >= Options.DelayTime.Value then
                             local homePart = nil
@@ -1284,7 +2694,7 @@ task.spawn(function()
                                     GoHome = false
                                     LastArrive = 0
                                 else
-                                    FlyTo(hp + Vector3.new(0, 1, 0), Options.FlySpeed.Value)
+                                    DropAndGoHome(hp)
                                 end
                             else
                                 GoHome = false
@@ -1292,27 +2702,284 @@ task.spawn(function()
                             end
                         end
                     elseif os.clock() - LastArrive >= Options.DelayTime.Value then
-                        local best, bestDist = nil, math.huge
-                        for _, e in ipairs(CollectEggs()) do
-                            if set[OfficialFull(e.Obj.Name)] then
-                                local d = (e.Pos - root.Position).Magnitude
-                                if d < bestDist then
-                                    bestDist = d
-                                    best = e
+                        if not VolcanoActive then
+                            local best, bestDist = nil, math.huge
+                            for _, e in ipairs(CollectEggs()) do
+                                local isVolcano = GetEggValue(e.Obj.Name) == 2500000000000
+                                if isVolcano or set[OfficialFull(e.Obj.Name)] then
+                                    local d = (e.Pos - root.Position).Magnitude
+                                    if isVolcano then d = d - 1e9 end
+                                    if d < bestDist then
+                                        bestDist = d
+                                        best = e
+                                    end
                                 end
                             end
-                        end
-                        if best and bestDist > 6 then
-                            FlyTo(best.Pos + Vector3.new(0, 1, 0), Options.FlySpeed.Value, true)
+                            if best then
+                                if GetEggValue(best.Obj.Name) == 2500000000000 then
+                                    if os.clock() - LastVolcanoRun >= 3 then
+                                        LastVolcanoRun = os.clock()
+                                        VolcanoActive = true
+                                        pcall(function()
+                                            VolcanoRunXD()
+                                        end)
+                                        VolcanoActive = false
+                                    end
+                                elseif bestDist > 6 then
+                                    FlyTo(EggTopPos(best), Options.FlySpeed.Value, true)
+                                end
+                            end
                         end
                     end
                 end
             end
         else
-            if Flying then
+            if Flying and not VolcanoActive then
                 StopFly()
             end
-            GoHome = false
+            if not (Toggles.AutoTP2 and Toggles.AutoTP2.Value) then
+                GoHome = false
+            end
         end
+    end
+end)
+
+local VolcanoDipCoord = Vector3.new(-5102.842773, 41405.410156, -3489.114014)
+local function GetCheckedSetOf(dd)
+    local out = {}
+    if not dd then return out end
+    local v = dd.Value
+    if type(v) == "table" then
+        local vals = dd.Values or {}
+        for k, val in pairs(v) do
+            if type(k) == "number" then
+                local name = vals[k]
+                if name then
+                    out[name] = true
+                end
+            elseif type(k) == "string" then
+                out[k] = true
+            end
+        end
+    elseif type(v) == "string" then
+        out[v] = true
+    end
+    return out
+end
+local LastDipRun = 0
+task.spawn(function()
+    while true do
+        task.wait(0.5)
+        if Toggles.AutoDip and Toggles.AutoDip.Value then
+            if os.clock() - LastDipRun >= 3 then
+                local root = GetRoot()
+                local egg = nil
+                if root then
+                    local dipSet = GetCheckedSetOf(Options.DipEgg)
+                    local set = GetCheckedSet()
+                    local bestDist = math.huge
+                    if next(dipSet) then
+                        for _, e in ipairs(CollectEggs()) do
+                            if dipSet[OfficialFull(e.Obj.Name)] then
+                                local d = (e.Pos - root.Position).Magnitude
+                                if d < bestDist then
+                                    bestDist = d
+                                    egg = e
+                                end
+                            end
+                        end
+                    elseif next(set) then
+                        for _, e in ipairs(CollectEggs()) do
+                            if set[OfficialFull(e.Obj.Name)] then
+                                local d = (e.Pos - root.Position).Magnitude
+                                if d < bestDist then
+                                    bestDist = d
+                                    egg = e
+                                end
+                            end
+                        end
+                    else
+                        egg = GetNearestEgg()
+                    end
+                end
+                if egg then
+                    LastDipRun = os.clock()
+                    pcall(function()
+                        TPTo(EggTopPos(egg))
+                    end)
+                    task.wait(1)
+                    pcall(function()
+                        TPTo(VolcanoDipCoord)
+                    end)
+                    task.spawn(function()
+                        local t0 = os.clock()
+                        local hold = VolcanoDipCoord + Vector3.new(0, 10, 0)
+                        while os.clock() - t0 < 10 do
+                            local r = GetRoot()
+                            if r then
+                                SetPos(r, hold)
+                            end
+                            pcall(function()
+                                game:GetService("ReplicatedStorage"):WaitForChild("packages"):WaitForChild("Net"):WaitForChild("RE/VolcanoDip"):FireServer()
+                            end)
+                            task.wait(0.2)
+                        end
+                    end)
+                    task.wait(10)
+                    if MyPlot then
+                        local home = MyPlot:IsA("BasePart") and MyPlot or MyPlot:FindFirstChildWhichIsA("BasePart")
+                        if home then
+                            DropAndGoHome(home)
+                        end
+                    end
+                end
+            end
+        end
+    end
+end)
+
+task.spawn(function()
+    local Lighting = game:GetService("Lighting")
+    local Players = game:GetService("Players")
+    local UserGS = nil
+    pcall(function()
+        UserGS = game:GetService("UserGameSettings")
+    end)
+    local FXKinds = { "ParticleEmitter", "Beam", "Fire", "Smoke", "Sparkles", "Trail", "Explosion", "Sound" }
+    local function KillFX(node)
+        for _, v in ipairs(node:GetDescendants()) do
+            for _, k in ipairs(FXKinds) do
+                if v:IsA(k) then
+                    pcall(function() v:Destroy() end)
+                    break
+                end
+            end
+        end
+    end
+    local function HidePlayers()
+        for _, p in ipairs(Players:GetPlayers()) do
+            if p ~= LP and p.Character then
+                pcall(function()
+                    p.Character:Destroy()
+                end)
+            end
+        end
+    end
+    local function HideDistant(node, dist)
+        for _, v in ipairs(node:GetDescendants()) do
+            if v:IsA("BasePart") then
+                local rp = GetRoot()
+                if rp and (v.Position - rp.Position).Magnitude > dist then
+                    pcall(function() v.LocalTransparencyModifier = 1 end)
+                end
+            end
+        end
+    end
+    while true do
+        task.wait(2)
+        if Toggles.Optimize and Toggles.Optimize.Value then
+            pcall(function()
+                Lighting.GlobalShadows = false
+                Lighting.FogEnd = 1e9
+                Lighting.Brightness = 1
+                Lighting.Ambient = Color3.fromRGB(200, 200, 200)
+                Lighting.OutdoorAmbient = Color3.fromRGB(200, 200, 200)
+                Lighting.ColorShift_Top = Color3.fromRGB(170, 170, 170)
+                Lighting.ColorShift_Bottom = Color3.fromRGB(170, 170, 170)
+            end)
+            pcall(function()
+                KillFX(workspace)
+            end)
+            pcall(function()
+                HidePlayers()
+            end)
+            pcall(function()
+                HideDistant(workspace, 600)
+            end)
+            pcall(function()
+                UserGS:SetQualityLevel(1)
+            end)
+            pcall(function()
+                local m = workspace:FindFirstChild("Map")
+                if m then m:Destroy() end
+            end)
+            pcall(function()
+                local plots = workspace:FindFirstChild("Plots")
+                if plots then
+                    for _, ch in ipairs(plots:GetChildren()) do
+                        if ch ~= MyPlot then
+                            ch:Destroy()
+                        end
+                    end
+                end
+            end)
+            pcall(function()
+                local plots = workspace:FindFirstChild("Plots")
+                if plots then
+                    for _, ch in ipairs(plots:GetChildren()) do
+                        local pets = ch:FindFirstChild("Pets")
+                        if pets then
+                            for _, pet in ipairs(pets:GetChildren()) do
+                                for _, d in ipairs(pet:GetDescendants()) do
+                                    if d:IsA("BasePart") then
+                                        d.Color = Color3.fromRGB(230, 230, 230)
+                                    end
+                                end
+                            end
+                        end
+                    end
+                end
+            end)
+        end
+    end
+end)
+
+task.spawn(function()
+    while true do
+        task.wait(5)
+        local lines = {}
+        lines[#lines+1] = "folders=" .. #EggFolders
+        for _, f in ipairs(EggFolders) do
+            lines[#lines+1] = "F:" .. f.Name
+        end
+        local eggs = CollectEggs()
+        lines[#lines+1] = "eggs=" .. #eggs
+        for _, e in ipairs(eggs) do
+            local o = e.Obj
+            lines[#lines+1] = "E:" .. o.Name .. "|Q=" .. (GetQualityOf(o) or "nil")
+            pcall(function()
+                for _, c in ipairs(o:GetChildren()) do
+                    if c:IsA("ValueBase") then
+                        lines[#lines+1] = "  V:" .. c.Name .. "=" .. tostring(c.Value)
+                    end
+                end
+                for k, v in pairs(o:GetAttributes()) do
+                    lines[#lines+1] = "  A:" .. k .. "=" .. tostring(v)
+                end
+                for _, d in ipairs(o:GetDescendants()) do
+                    if d:IsA("ValueBase") then
+                        lines[#lines+1] = "  DV:" .. d.Name .. "=" .. tostring(d.Value)
+                    elseif d:IsA("TextLabel") and d.Text and d.Text ~= "" then
+                        lines[#lines+1] = "  T:" .. d.Text
+                    end
+                end
+                local node = o.Parent
+                for _ = 1, 3 do
+                    if not node then break end
+                    if node:IsA("Folder") then
+                        lines[#lines+1] = "  FOLDER:" .. node.Name
+                    end
+                    node = node.Parent
+                end
+            end)
+        end
+        local n = 0
+        for _ in pairs(ESPTags) do n = n + 1 end
+        lines[#lines+1] = "esp=" .. n
+        local content = table.concat(lines, "\n")
+        pcall(function()
+            if makefolder and not isfolder("骑宠物") then makefolder("骑宠物") end
+            writefile("骑宠物/esp诊断.txt", content)
+        end)
     end
 end)
