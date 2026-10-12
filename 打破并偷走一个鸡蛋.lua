@@ -1,8 +1,9 @@
-local repo = "https://raw.githubusercontent.com/ATLASTEAM01/Obsidian/main/"
-local Library = loadstring(game:HttpGet(repo .. "Library.lua"))()
-local ThemeManager = loadstring(game:HttpGet(repo .. "addons/ThemeManager.lua"))()
-local SaveManager = loadstring(game:HttpGet(repo .. "addons/SaveManager.lua"))()
-
+local WindUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/finendss/VowLibrary/refs/heads/main/WINDUI.lua"))()
+if not WindUI then
+	local sg = game:GetService("StarterGui")
+	sg:SetCore("SendNotification", {Title = "偷蛋脚本", Text = "WindUI 加载失败，请检查网络", Duration = 8})
+	return
+end
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -13,14 +14,36 @@ local ATTACK_RANGE = 200
 local AUTO_INTERACT_RANGE = 12
 local FALLBACK_SPEED = 16
 local PICKUP_TRIGGER_INTERVAL = 0.03
+local LINK_INTERACT_INTERVAL = 0.25
 
-local Event = ReplicatedStorage:WaitForChild("EggHitRequest")
-local PICKUP_FOLDER = workspace:WaitForChild("AnimalPickups")
+local function waitChild(parent, name, timeout)
+	local t = 0
+	while not parent:FindFirstChild(name) and t < timeout do
+		t = t + 1
+		task.wait(1)
+	end
+	return parent:FindFirstChild(name)
+end
+
+local function waitChildLoop(parent, name)
+	local c = parent:FindFirstChild(name)
+	while not c do
+		task.wait(1)
+		c = parent:FindFirstChild(name)
+	end
+	return c
+end
+
+local Event = waitChild(ReplicatedStorage, "EggHitRequest", 10)
+if not Event then
+	game:GetService("StarterGui"):SetCore("SendNotification", {Title = "偷蛋脚本", Text = "缺少对象: ReplicatedStorage.EggHitRequest", Duration = 8})
+	return
+end
 local PET_RETURN_POS = Vector3.new(-78.811653, 3.498025, -21.007202)
 
 local char = player.Character or player.CharacterAdded:Wait()
-local humanoid = char:WaitForChild("Humanoid")
-local hrp = char:WaitForChild("HumanoidRootPart")
+local humanoid = waitChildLoop(char, "Humanoid")
+local hrp = waitChildLoop(char, "HumanoidRootPart")
 
 local autoRun = false
 local autoRunToggle = nil
@@ -29,6 +52,9 @@ local antiAFK = false
 local antiAFKTask = nil
 local autoPickup = false
 local autoInteract = false
+local autoInteractLink = false
+local autoInteractLinked = false
+local AutoInteractToggle = nil
 local autoUpgradeTreadmill = false
 local autoUpgradePlot = false
 local autoEquipBest = false
@@ -67,6 +93,9 @@ local EGG_DATA = {
 	{ en = "Sun", cn = "太阳蛋", weight = 1000000, rarity = "Divine" },
 	{ en = "Starry", cn = "星空蛋", weight = 2000000, rarity = "Divine" },
 	{ en = "Blackhole", cn = "黑洞蛋", weight = 5000000, rarity = "Cosmic" },
+	{ en = "Plasma", cn = "等离子蛋", weight = 6000000, rarity = "Celestial" },
+	{ en = "Nebula", cn = "星云蛋", weight = 7000000, rarity = "Celestial" },
+	{ en = "Supernova", cn = "超新星蛋", weight = 8000000, rarity = "Celestial" },
 }
 
 local EGG_CN_TO_EN = {}
@@ -265,6 +294,7 @@ local RARITY_CN = {
 	Cosmic = "宇宙", Secret = "秘密", Eternal = "永恒",
 	HUGE = "巨大", Huge = "巨大", TITANIC = "泰坦", Titanic = "泰坦",
 	Celestial = "天界", Hell = "地狱",
+	Void = "虚空", Omega = "欧米伽",
 }
 
 local RARITY_COLOR = {
@@ -274,9 +304,10 @@ local RARITY_COLOR = {
 	Secret = "#FF4500", Eternal = "#00FFFF",
 	HUGE = "#FF1493", Huge = "#FF1493", TITANIC = "#FF0000", Titanic = "#FF0000",
 	Celestial = "#FFE066", Hell = "#B22222",
+	Void = "#4B0082", Omega = "#FF8C00",
 }
 
-local PET_RARITY_OPTIONS = { "普通", "罕见", "稀有", "史诗", "传说", "神话", "宇宙", "秘密", "永恒", "神圣", "天界", "地狱" }
+local PET_RARITY_OPTIONS = { "普通", "罕见", "稀有", "史诗", "传说", "神话", "宇宙", "秘密", "永恒", "神圣", "天界", "地狱", "虚空", "欧米伽" }
 
 local selectedEggEnglish = {}
 local selectedPetRarities = {}
@@ -299,13 +330,64 @@ local function getCurrentSpeed()
 	return spd
 end
 
-local function getGroundY(pos)
+local function getGroundY(pos, upOnly)
 
-	local ray = workspace:Raycast(pos + Vector3.new(0, 2, 0), Vector3.new(0, -40, 0))
+	local rp = RaycastParams.new()
+	rp.FilterType = Enum.RaycastFilterType.Exclude
+	rp.FilterDescendantsInstances = { char }
+	local ray = workspace:Raycast(pos + Vector3.new(0, 4, 0), Vector3.new(0, -400, 0), rp)
 	if ray and ray.Instance then
+		if upOnly and ray.Normal.Y < 0.1 then
+			return nil
+		end
 		return ray.Position.Y
 	end
-	return pos.Y
+	return nil
+end
+
+local lockUtil = {}
+
+lockUtil.navAvoid = true
+
+lockUtil.lowestY = function()
+	if not char or not char.Parent then return nil end
+	local low, any = nil, nil
+	for _, part in ipairs(char:GetDescendants()) do
+		if part:IsA("BasePart") then
+			local bottom = part.Position.Y - part.Size.Y * 0.5
+			if not any or bottom < any then any = bottom end
+			local n = part.Name
+			if n == "LeftFoot" or n == "RightFoot" or n == "LeftLowerLeg" or n == "RightLowerLeg"
+				or n == "LeftUpperLeg" or n == "RightUpperLeg" or n == "Torso"
+				or n == "LowerTorso" or n == "UpperTorso" or n == "HumanoidRootPart" then
+				if not low or bottom < low then low = bottom end
+			end
+		end
+	end
+	return low or any
+end
+
+lockUtil.placeHover = function(x, z, baseY, h)
+	if not char or not char.Parent then return nil end
+	if not char:FindFirstChild("HumanoidRootPart") then return nil end
+	pcall(function()
+		local pv = char:GetPivot()
+		local _, yaw = pv:ToEulerAnglesYXZ()
+		char:PivotTo(CFrame.new(x, pv.Position.Y, z) * CFrame.Angles(0, yaw, 0))
+	end)
+	for _, d in ipairs(char:GetDescendants()) do
+		if d:IsA("Motor6D") then
+			pcall(function() d.Transform = CFrame.new() end)
+		end
+	end
+	pcall(function() RunService.Heartbeat:Wait() end)
+	local low = lockUtil.lowestY()
+	if not low then return nil end
+	local dy = (baseY + h) - low
+	pcall(function()
+		char:PivotTo(char:GetPivot() + Vector3.new(0, dy, 0))
+	end)
+	return dy
 end
 
 local function lockCharacter()
@@ -318,7 +400,20 @@ local function lockCharacter()
 	end
 	local anchorY = nil
 	local h0 = char:FindFirstChild("HumanoidRootPart")
-	if h0 then anchorY = getGroundY(h0.Position) end
+	if h0 then
+		anchorY = h0.Position.Y
+		local gY = getGroundY(h0.Position, true)
+		if gY then
+			local low = lockUtil.lowestY()
+			if low and low < gY + 2 then
+				local up = (gY + 2) - low
+				pcall(function() h0.CFrame = h0.CFrame + Vector3.new(0, up, 0) end)
+				anchorY = anchorY + up
+			elseif anchorY - gY > 12 then
+				anchorY = gY + 4
+			end
+		end
+	end
 	if keepAliveConn then keepAliveConn:Disconnect() end
 	keepAliveConn = RunService.Heartbeat:Connect(function()
 		if not isLocked then return end
@@ -354,17 +449,14 @@ end
 
 player.CharacterAdded:Connect(function(newChar)
 	char = newChar
-	humanoid = newChar:WaitForChild("Humanoid")
-	hrp = newChar:WaitForChild("HumanoidRootPart")
+	humanoid = waitChildLoop(newChar, "Humanoid")
+	hrp = waitChildLoop(newChar, "HumanoidRootPart")
 	task.wait(0.3)
 	updateSavedSpeed()
 	isLocked = false
 	if keepAliveConn then
 		keepAliveConn:Disconnect()
 		keepAliveConn = nil
-	end
-	if autoRun or autoPickup then
-		lockCharacter()
 	end
 end)
 
@@ -394,29 +486,137 @@ local function getAllZones()
 end
 
 
-local function getZoneGuardList()
-	local guards = {}
-	local zoneBuilds = workspace.Build and workspace.Build:FindFirstChild("ZoneBuilds")
-	if not zoneBuilds then return guards end
-	for _, zone in ipairs(zoneBuilds:GetChildren()) do
-		for _, desc in ipairs(zone:GetDescendants()) do
-			if desc:IsA("Model") and not desc:IsA("Folder") then
-				local nm = string.lower(tostring(desc.Name))
-				if not string.find(nm, "egg", 1, true) then
-					local posPart = desc:FindFirstChild("HumanoidRootPart") or desc.PrimaryPart or desc:FindFirstChildWhichIsA("BasePart")
-					if posPart then
-						table.insert(guards, { model = desc, part = posPart })
+lockUtil.zoneBoxCache = {}
+
+lockUtil.zoneBox = function(zone)
+	if lockUtil.zoneBoxCache[zone] ~= nil then return lockUtil.zoneBoxCache[zone] end
+	local res = false
+	pcall(function()
+		local cf, size = zone:GetBoundingBox()
+		res = { cf = cf, size = size, vol = size.X * size.Y * size.Z }
+	end)
+	lockUtil.zoneBoxCache[zone] = res
+	return res
+end
+
+lockUtil.zonePivotPos = function(zone)
+	local ok, p = pcall(function() return zone:GetPivot().Position end)
+	if ok then return p end
+	return nil
+end
+
+lockUtil.zoneOfPoint = function(pos)
+	local best, bestD, bestVol, bestC = nil, nil, nil, nil
+	for _, zone in ipairs(getAllZones()) do
+		if zone.Parent then
+			local box = lockUtil.zoneBox(zone)
+			local pv = lockUtil.zonePivotPos(zone)
+			local cd = pv and (pv - pos).Magnitude or math.huge
+			local d, vol
+			if box then
+				local rel = box.cf:PointToObjectSpace(pos)
+				local dx = math.max(0, math.abs(rel.X) - box.size.X / 2)
+				local dy = math.max(0, math.abs(rel.Y) - box.size.Y / 2)
+				local dz = math.max(0, math.abs(rel.Z) - box.size.Z / 2)
+				d = math.sqrt(dx * dx + dy * dy + dz * dz)
+				vol = box.vol
+			else
+				d, vol = cd, math.huge
+			end
+			local better = false
+			if not best then
+				better = true
+			elseif d < bestD - 0.01 then
+				better = true
+			elseif math.abs(d - bestD) <= 0.01 then
+				if vol < bestVol - 0.001 then
+					better = true
+				elseif math.abs(vol - bestVol) <= 0.001 and cd < bestC then
+					better = true
+				end
+			end
+			if better then best, bestD, bestVol, bestC = zone, d, vol, cd end
+		end
+	end
+	return best, bestD
+end
+
+local function collectGuardsFromZone(zone, guards, allGuards)
+	for _, desc in ipairs(zone:GetDescendants()) do
+		if desc:IsA("Model") and not desc:IsA("Folder") then
+			local nm = string.lower(tostring(desc.Name))
+			if not string.find(nm, "egg", 1, true) then
+				local hasHum = desc:FindFirstChildOfClass("Humanoid") ~= nil or desc:FindFirstChildWhichIsA("Humanoid", true) ~= nil
+				local posPart = desc:FindFirstChild("HumanoidRootPart") or desc.PrimaryPart or desc:FindFirstChildWhichIsA("BasePart")
+				if posPart then
+					local item = { model = desc, part = posPart, humanoid = hasHum }
+					if allGuards then table.insert(allGuards, item) end
+					if hasHum or string.find(nm, "guard", 1, true) then
+						table.insert(guards, item)
 					end
 				end
 			end
 		end
 	end
-	return guards
 end
 
-local function findNearestGuard(fromPos)
+local function getZoneGuardList(zone)
+	local all = {}
+	local zoneBuilds = workspace.Build and workspace.Build:FindFirstChild("ZoneBuilds")
+	if not zoneBuilds then return {} end
+	local now = os.clock()
+	local cache = lockUtil.guardScanCache
+	if not cache then
+		cache = { t = 0, all = {} }
+		lockUtil.guardScanCache = cache
+	end
+	if #cache.all == 0 or now - cache.t > 3 then
+		local fresh = {}
+		for _, z in ipairs(zoneBuilds:GetChildren()) do
+			local tmp = {}
+			collectGuardsFromZone(z, tmp, fresh)
+		end
+		cache.all = fresh
+		cache.t = now
+	end
+	for _, g in ipairs(cache.all) do
+		if g.model.Parent then table.insert(all, g) end
+	end
+	local function zoneOwner(m)
+		local node = m
+		while node and node.Parent do
+			if node.Parent == zoneBuilds then return node end
+			node = node.Parent
+		end
+		return nil
+	end
+	local function isGuard(g)
+		if g.humanoid then return true end
+		return string.find(string.lower(tostring(g.model.Name)), "guard", 1, true) ~= nil
+	end
+	local zoneGuards, zoneAll, globalGuards = {}, {}, {}
+	local tgt = (zone and zone.Parent) and zone or nil
+	for _, g in ipairs(all) do
+		if isGuard(g) then table.insert(globalGuards, g) end
+		if tgt then
+			local byTree = zoneOwner(g.model)
+			local byPos = lockUtil.zoneOfPoint and lockUtil.zoneOfPoint(g.part.Position)
+			if not byPos then byPos = byTree end
+			if byTree == tgt or byPos == tgt then
+				table.insert(zoneAll, g)
+				if isGuard(g) then table.insert(zoneGuards, g) end
+			end
+		end
+	end
+	if #zoneGuards > 0 then return zoneGuards end
+	if #zoneAll > 0 then return zoneAll end
+	if #globalGuards > 0 then return globalGuards end
+	return all
+end
+
+local function findNearestGuard(fromPos, zone)
 	local best, bestDist = nil, math.huge
-	for _, g in ipairs(getZoneGuardList()) do
+	for _, g in ipairs(getZoneGuardList(zone)) do
 		local d = (g.part.Position - fromPos).Magnitude
 		if d < bestDist then best, bestDist = g, d end
 	end
@@ -425,18 +625,93 @@ end
 
 local function petGone(pet, fromPickup)
 	if not pet or not pet.Parent then return true end
-	if fromPickup and pet.Parent ~= PICKUP_FOLDER then return true end
+	if fromPickup then
+		local folder = workspace:FindFirstChild("AnimalPickups")
+		if folder and pet.Parent ~= folder then return true end
+	end
 	return false
 end
 
-local function panTo(targetPos, arriveDist, watchObj)
-	if not char or not char.Parent then return false end
-	if not autoRun and not autoPickup then return false end
-	arriveDist = arriveDist or 2
+lockUtil.navService = function()
+	if lockUtil.navSvc == nil then
+		local ok, svc = pcall(function() return game:GetService("PathfindingService") end)
+		if ok and svc then
+			lockUtil.navSvc = svc
+		else
+			lockUtil.navSvc = false
+		end
+	end
+	if lockUtil.navSvc == false then return nil end
+	return lockUtil.navSvc
+end
 
+lockUtil.navPath = function(fromPos, goalPos)
+	if lockUtil.navAvoid == false then return nil end
+	local svc = lockUtil.navService()
+	if not svc then return nil end
+	local list = nil
+	pcall(function()
+		local path = svc:CreatePath({ AgentRadius = 2, AgentHeight = 5, AgentCanJump = true, AgentMaxSlope = 89, WaypointSpacing = 4 })
+		path:ComputeAsync(fromPos, goalPos)
+		if path.Status == Enum.PathStatus.Success then
+			local wps = path:GetWaypoints()
+			if wps and #wps >= 2 then
+				local out = {}
+				for i = 2, #wps do
+					table.insert(out, wps[i].Position)
+				end
+				if #out > 0 then list = out end
+			end
+		end
+	end)
+	return list
+end
+
+lockUtil.navJump = function()
+	if humanoid and humanoid.Parent and humanoid.Health > 0 then
+		pcall(function()
+			if humanoid.JumpPower and humanoid.JumpPower < 50 then humanoid.JumpPower = 50 end
+			humanoid.Jump = true
+		end)
+	end
+end
+
+lockUtil.navStep = function(dirWorld, duration, spd)
+	if not dirWorld then return end
+	if dirWorld.Magnitude < 0.01 then return end
+	local unit = dirWorld.Unit
+	local cam = workspace.CurrentCamera
+	local camCF = cam and cam.CFrame
+	local mDir = camCF and camCF:VectorToObjectSpace(unit) or unit
+	local t = 0
+	while t < duration do
+		if humanoid and humanoid.Parent then
+			pcall(function()
+				if spd and humanoid.WalkSpeed < spd then humanoid.WalkSpeed = spd end
+				humanoid:Move(mDir, true)
+			end)
+		end
+		t += RunService.RenderStepped:Wait()
+	end
+end
+
+lockUtil.navWalk = function(targetPos, arriveDist, opts)
+	if not char or not char.Parent then return "stop" end
+	opts = opts or {}
+	arriveDist = arriveDist or 2
+	local maxTime = opts.maxTime or 60
 	if keepAliveConn then
 		keepAliveConn:Disconnect()
 		keepAliveConn = nil
+	end
+	local baseSpd = getCurrentSpeed()
+	if baseSpd < 1 then baseSpd = 1 end
+	local boostSpd = baseSpd
+	if boostSpd < 16 then boostSpd = 16 end
+	local function restoreSpd()
+		if humanoid and humanoid.Parent then
+			pcall(function() humanoid.WalkSpeed = baseSpd end)
+		end
 	end
 	if humanoid and humanoid.Parent then
 		pcall(function()
@@ -445,22 +720,21 @@ local function panTo(targetPos, arriveDist, watchObj)
 			humanoid:ChangeState(Enum.HumanoidStateType.Running)
 		end)
 	end
-
 	local startPos = char:GetPivot().Position
 	local goal = Vector3.new(targetPos.X, startPos.Y, targetPos.Z)
-
-	local arrived = false
+	local wps = nil
+	local wi = 1
+	if (Vector3.new(goal.X - startPos.X, 0, goal.Z - startPos.Z)).Magnitude > 14 then
+		wps = lockUtil.navPath(startPos, goal)
+	end
 	local elapsed = 0
-	while elapsed < 60 do
-		if not autoRun and not autoPickup then
-			pcall(function() humanoid:Move(Vector3.zero, true) end)
-			return false
-		end
-		if watchObj and petGone(watchObj) then
-			pcall(function() humanoid:Move(Vector3.zero, true) end)
-			return false
-		end
-
+	local lastPos = startPos
+	local stallT = 0
+	local stuckN = 0
+	local repathN = 0
+	local result = "timeout"
+	while elapsed < maxTime do
+		if opts.cancel and opts.cancel() then result = "stop" break end
 		pcall(function()
 			if keepAliveConn then
 				keepAliveConn:Disconnect()
@@ -473,21 +747,150 @@ local function panTo(targetPos, arriveDist, watchObj)
 			end
 		end)
 		local curHrp = char:FindFirstChild("HumanoidRootPart")
-		if not curHrp then return false end
+		if not curHrp then result = "stop" break end
 		local curPos = curHrp.Position
-		local dir = Vector3.new(goal.X - curPos.X, 0, goal.Z - curPos.Z)
-		if dir.Magnitude < arriveDist then arrived = true break end
+		local remain = (Vector3.new(goal.X - curPos.X, 0, goal.Z - curPos.Z)).Magnitude
+		if remain < arriveDist then result = "arrive" break end
+		if wps then
+			while wps and wi <= #wps and (Vector3.new(wps[wi].X - curPos.X, 0, wps[wi].Z - curPos.Z)).Magnitude < 4 do
+				wi += 1
+				stuckN = 0
+			end
+			if wi > #wps then wps = nil end
+		end
+		local legend = goal
+		if wps and wps[wi] then legend = Vector3.new(wps[wi].X, curPos.Y, wps[wi].Z) end
+		local dir = Vector3.new(legend.X - curPos.X, 0, legend.Z - curPos.Z)
 		local toGoal = dir.Unit
 		local cam = workspace.CurrentCamera
 		local camCF = cam and cam.CFrame
 		local camDir = camCF and camCF:VectorToObjectSpace(toGoal) or toGoal
+		if opts.brake then
+			local brakeD = baseSpd * 0.15
+			if brakeD < 3 then brakeD = 3 end
+			local useSpd = baseSpd
+			if remain < brakeD then
+				useSpd = remain * 8
+				if useSpd < 2 then useSpd = 2 end
+				if useSpd > baseSpd then useSpd = baseSpd end
+			end
+			if humanoid and humanoid.Parent and math.abs(humanoid.WalkSpeed - useSpd) > 0.1 then
+				pcall(function() humanoid.WalkSpeed = useSpd end)
+			end
+		end
 		pcall(function() humanoid:Move(camDir, true) end)
 		local dt = RunService.RenderStepped:Wait()
 		elapsed += dt
+		local moved = (curHrp.Position - lastPos).Magnitude
+		lastPos = curHrp.Position
+		if moved < 0.05 then
+			stallT += dt
+			if stallT > 0.4 then
+				stallT = 0
+				stuckN += 1
+				if stuckN > 10 then result = "stuck" break end
+				lockUtil.navJump()
+				local gdir = Vector3.new(goal.X - curHrp.Position.X, 0, goal.Z - curHrp.Position.Z)
+				if gdir.Magnitude < 0.1 then gdir = toGoal end
+				gdir = gdir.Unit
+				local side = 1
+				if math.floor((stuckN - 1) / 2) % 2 == 1 then side = -1 end
+				local perp = Vector3.new(-gdir.Z, 0, gdir.X) * side
+				local fwd = 0.15
+				if stuckN == 1 then fwd = 0.4 end
+				lockUtil.navStep((gdir * fwd + perp).Unit, 0.5, boostSpd)
+				if (stuckN == 2 or stuckN == 5 or stuckN == 8) and repathN < 3 and remain > 6 then
+					repathN += 1
+					local np = lockUtil.navPath(curHrp.Position, goal)
+					if np then
+						wps = np
+						wi = 1
+					end
+				end
+			end
+		else
+			stallT = 0
+		end
 	end
-
 	pcall(function() humanoid:Move(Vector3.zero, true) end)
-	return arrived
+	restoreSpd()
+	return result
+end
+
+lockUtil.tapSlot1Btn = nil
+lockUtil.tapSlot1Miss = 0
+lockUtil.tapSlot1Last = 0
+lockUtil.tapSlot1Button = function()
+	local nowT = os.clock()
+	if nowT - lockUtil.tapSlot1Last < 0.15 then return end
+	lockUtil.tapSlot1Last = nowT
+	local btn = lockUtil.tapSlot1Btn
+	if btn == nil or not btn.Parent then
+		if lockUtil.tapSlot1Miss > 0 then
+			lockUtil.tapSlot1Miss -= 1
+			return
+		end
+		pcall(function()
+			btn = game:GetService("Players").LocalPlayer.PlayerGui.MobileScatchel.HotBarUi.BottomHUD["1"]
+		end)
+		if btn == nil then
+			lockUtil.tapSlot1Miss = 60
+			return
+		end
+		lockUtil.tapSlot1Btn = btn
+	end
+	local target = btn
+	if not btn:IsA("GuiButton") then
+		local child = btn:FindFirstChildWhichIsA("GuiButton", true)
+		if child then target = child end
+	end
+	local fired = 0
+	local function TryFire(sig)
+		if sig == nil then return end
+		local okc, conns = pcall(getconnections, sig)
+		if okc and type(conns) == "table" then
+			for _, cn in ipairs(conns) do
+				pcall(function() cn:Fire() end)
+				fired += 1
+			end
+		end
+	end
+	pcall(function()
+		TryFire(target.MouseButton1Click)
+		TryFire(target.MouseButton1Down)
+		TryFire(target.Activated)
+	end)
+	if fired > 0 then return end
+	pcall(function()
+		if target:IsA("GuiButton") then target:Click() end
+		for _, d in ipairs(target:GetDescendants()) do
+			if d:IsA("GuiButton") then d:Click() end
+		end
+	end)
+	pcall(function()
+		local vim = game:GetService("VirtualInputManager")
+		local pos = target.AbsolutePosition + target.AbsoluteSize * 0.5
+		vim:SendMouseMoveEvent(pos.X, pos.Y, 0)
+		vim:SendMouseButtonEvent(pos.X, pos.Y, 0, true, Enum.UserInputType.MouseButton1, false)
+		vim:SendMouseButtonEvent(pos.X, pos.Y, 0, false, Enum.UserInputType.MouseButton1, false)
+	end)
+	pcall(function()
+		local vim = game:GetService("VirtualInputManager")
+		local pos = target.AbsolutePosition + target.AbsoluteSize * 0.5
+		vim:SendTouchEvent(1, Vector2.new(pos.X, pos.Y), Enum.TouchState.Began, false)
+		vim:SendTouchEvent(1, Vector2.new(pos.X, pos.Y), Enum.TouchState.Ended, false)
+	end)
+end
+
+local function panTo(targetPos, arriveDist, watchObj)
+	if not autoRun and not autoPickup then return false end
+	local function cancel()
+		if not autoRun and not autoPickup then return true end
+		if watchObj and petGone(watchObj) then return true end
+		return false
+	end
+	local r = lockUtil.navWalk(targetPos, arriveDist, { brake = true, cancel = cancel })
+	return r == "arrive"
 end
 
 local function waitOrStop(t)
@@ -502,23 +905,8 @@ end
 
 local function attackEgg(eggPart)
 	if not eggPart or not eggPart.Parent then return end
+	lockUtil.tapSlot1Button()
 	Event:FireServer(eggPart, 1)
-end
-
-local function findNearbyPet(centerPos, radius)
-	radius = radius or 25
-	local closestPet, closestDist = nil, radius
-	for _, pet in ipairs(PICKUP_FOLDER:GetChildren()) do
-		local petPart = pet:IsA("BasePart") and pet or pet:FindFirstChildWhichIsA("BasePart")
-		if petPart then
-			local dist = (petPart.Position - centerPos).Magnitude
-			if dist < closestDist then
-				closestDist = dist
-				closestPet = pet
-			end
-		end
-	end
-	return closestPet
 end
 
 local function getEggHealth(obj)
@@ -562,15 +950,9 @@ local function getEggHealth(obj)
 	return hp
 end
 
-local function isEggDead(obj)
-	local hp = getEggHealth(obj)
-	if hp == nil then return false end
-	return hp <= 0
-end
+local PET_PREFIX_WORDS = { "Common", "Uncommon", "Rare", "Epic", "Legendary", "Mythic", "Mythical", "Cosmic", "Secret", "Eternal", "Divine", "HUGE", "Huge", "TITANIC", "Titanic", "Fortune", "Lucky", "Gold", "Sun", "Solar", "Starry", "Star", "Blackhole", "BlackHole", "Volcanic", "Lava", "Blossom", "Flower", "Bamboo", "Angel", "Holy", "Fallen", "FallenAngel", "Rift", "Void", "Celestial", "Omega", "Sea", "Ocean", "Lake", "Frozen", "Ice", "Snow", "Yeti", "Rainbow", "Candy", "Tree", "Wood", "Rock", "Stone", "Forest", "Cactus", "Desert", "Bones", "Bone", "Skeleton", "Scorpion", "Easter", "Gooey", "Slime", "Sticky", "Swamp", "Water", "Aqua" }
 
-local PET_PREFIX_WORDS = { "Common", "Uncommon", "Rare", "Epic", "Legendary", "Mythic", "Mythical", "Cosmic", "Secret", "Eternal", "Divine", "HUGE", "Huge", "TITANIC", "Titanic", "Fortune", "Lucky", "Gold", "Sun", "Solar", "Starry", "Star", "Blackhole", "BlackHole", "Volcanic", "Lava", "Blossom", "Flower", "Bamboo", "Angel", "Holy", "Fallen", "FallenAngel", "Rift", "Void", "Sea", "Ocean", "Lake", "Frozen", "Ice", "Snow", "Yeti", "Rainbow", "Candy", "Tree", "Wood", "Rock", "Stone", "Forest", "Cactus", "Desert", "Bones", "Bone", "Skeleton", "Scorpion", "Easter", "Gooey", "Slime", "Sticky", "Swamp", "Water", "Aqua" }
-
-local PET_PREFIX_CN_WORDS = { "普通", "罕见", "稀有", "史诗", "传说", "神话", "宇宙", "秘密", "永恒", "神圣", "巨大", "泰坦" }
+PET_PREFIX_WORDS.cn = { "普通", "罕见", "稀有", "史诗", "传说", "神话", "宇宙", "秘密", "永恒", "神圣", "巨大", "泰坦", "天界", "虚空", "欧米伽" }
 
 local function stripNamePrefix(raw)
 	if not raw then return raw end
@@ -585,7 +967,7 @@ local function stripNamePrefix(raw)
 			break
 		end
 	end
-	for _, cn in ipairs(PET_PREFIX_CN_WORDS) do
+	for _, cn in ipairs(PET_PREFIX_WORDS.cn) do
 		if string.sub(out, 1, #cn) == cn then
 			out = string.sub(out, #cn + 1)
 			out = string.gsub(out, "^[%s_%-]+", "")
@@ -624,11 +1006,7 @@ local function normalizePetName(raw)
 	return nil
 end
 
-local function getPetRarity(cn)
-	return PET_RARITY_CN[cn]
-end
-
-local RARITY_WORDS = { "Common", "Uncommon", "Rare", "Epic", "Legendary", "Mythic", "Mythical", "Cosmic", "Secret", "Eternal", "Divine", "HUGE", "Huge", "TITANIC", "Titanic", "Celestial", "Heaven", "Heavenly", "Hell", "Hades", "Infernal", "Inferno", "Underworld", "Nether" }
+local RARITY_WORDS = { "Common", "Uncommon", "Rare", "Epic", "Legendary", "Mythic", "Mythical", "Cosmic", "Secret", "Eternal", "Divine", "HUGE", "Huge", "TITANIC", "Titanic", "Celestial", "Heaven", "Heavenly", "Hell", "Hades", "Infernal", "Inferno", "Underworld", "Nether", "Void", "Omega" }
 
 local RARITY_ALIAS_EN = {
 	Mythical = "Mythic", Heaven = "Celestial", Heavenly = "Celestial",
@@ -640,6 +1018,7 @@ local RARITY_CN_TO_EN = {
 	["史诗"] = "Epic", ["传说"] = "Legendary", ["神话"] = "Mythic",
 	["宇宙"] = "Cosmic", ["秘密"] = "Secret", ["永恒"] = "Eternal",
 	["神圣"] = "Divine", ["天界"] = "Celestial", ["地狱"] = "Hell",
+	["虚空"] = "Void", ["欧米伽"] = "Omega",
 }
 
 local function extractRarityFromName(raw)
@@ -721,29 +1100,16 @@ local function getPetPart(pet)
 	return pet:FindFirstChildWhichIsA("BasePart")
 end
 
-local function dumpPetStructure(pet)
-	pcall(function()
-		local special = {}
-		local total = 0
-		for _, k in ipairs(pet:GetDescendants()) do
-			total += 1
-			local cn = k.ClassName
-			if cn == "ProximityPrompt" or cn == "ClickDetector" or cn == "RemoteEvent" or cn == "RemoteFunction" or cn == "Humanoid" then
-				table.insert(special, tostring(k.Name) .. ":" .. cn)
-			end
-		end
-		local top = {}
-		for _, k in ipairs(pet:GetChildren()) do
-			table.insert(top, k.ClassName)
-		end
-		print("宠物诊断 name=" .. tostring(pet.Name) .. " 子对象=" .. table.concat(top, ",") .. " 特殊=" .. table.concat(special, ",") .. " 描述=" .. tostring(total))
-	end)
-end
+local pickupCooldown = {}
 
 local function findAnyPetToPickup()
 	local bestPet, bestDist = nil, math.huge
-	for _, pet in ipairs(PICKUP_FOLDER:GetChildren()) do
-		local part = getPetPart(pet)
+	local nowT = os.clock()
+	local pickups = workspace:FindFirstChild("AnimalPickups")
+	for _, pet in ipairs(pickups and pickups:GetChildren() or {}) do
+		local cd = pickupCooldown[pet]
+		if cd and cd <= nowT then pickupCooldown[pet] = nil cd = nil end
+		local part = not cd and getPetPart(pet) or nil
 		if part and matchesSelectedPetName(pet) then
 			local curHrp = char and char:FindFirstChild("HumanoidRootPart")
 			if curHrp then
@@ -751,6 +1117,8 @@ local function findAnyPetToPickup()
 				if d < bestDist then
 					bestDist = d
 					bestPet = pet
+					lockUtil.petName = pet.Name
+					lockUtil.petPos = part.Position
 				end
 			end
 		end
@@ -821,40 +1189,12 @@ local function collectPetInteractions(pet)
 	return list
 end
 
-local function dumpPickupRemotes()
-	pcall(function()
-		local hits = {}
-		local kw = { "pick", "collect", "claim", "take", "grab", "steal", "get", "receive", "pet", "egg" }
-		local function scan(obj)
-			for _, d in ipairs(obj:GetDescendants()) do
-				if d:IsA("RemoteEvent") or d:IsA("RemoteFunction") then
-					local n = string.lower(tostring(d.Name))
-					for _, k in ipairs(kw) do
-						if string.find(n, k, 1, true) then
-							table.insert(hits, tostring(d.Parent and d.Parent.Name or "?") .. "." .. d.Name .. ":" .. d.ClassName)
-							break
-						end
-					end
-				end
-			end
-		end
-		for _, r in ipairs({ workspace, game:GetService("ReplicatedStorage") }) do
-			if r then scan(r) end
-		end
-		if #hits > 0 then
-			print("宠物远程 " .. table.concat(hits, ","))
-		else
-			print("宠物远程 无")
-		end
-	end)
-end
-
 local pickupBusy = false
 
 
 local homeMethod = "walk"
-local GUARD_SAFE_DIST = 16
-local GUARD_TELEPORT_WAIT = 2
+local GUARD_SAFE_DIST = 20
+local GUARD_TELEPORT_WAIT = 1
 local TEMP_TELEPORT_POS = Vector3.new(-75.241516, 3.498025, 13.681024)
 local HOME_TELEPORT_LOOPS = 1
 
@@ -862,41 +1202,76 @@ local HOME_TELEPORT_LOOPS = 1
 local fullLockConn = nil
 local fullLockSnap = {}
 
-local FULL_LOCK_SINK = 3
-
 local function lockCharacterFull()
 	if fullLockConn then return end
 	if not char or not humanoid or not humanoid.Parent then return end
+	local floatH = 2
+	local hrp = char:FindFirstChild("HumanoidRootPart")
+	if not hrp then return end
 	pcall(function()
 		humanoid.PlatformStand = true
 		humanoid.JumpPower = 0
 	end)
-	local dy = 0
+	local groundY = getGroundY(hrp.Position, true)
+	local pivot = char:GetPivot()
+	local _, yaw = pivot:ToEulerAnglesYXZ()
 	pcall(function()
-		local hrp = char:FindFirstChild("HumanoidRootPart")
-		if hrp then
-			local groundY = getGroundY(hrp.Position)
-			local lowestBottom = hrp.Position.Y
-			for _, part in ipairs(char:GetDescendants()) do
-				if part:IsA("BasePart") then
-					local bottom = part.Position.Y - part.Size.Y / 2
-					if bottom < lowestBottom then
-						lowestBottom = bottom
-					end
-				end
-			end
-			dy = (groundY - FULL_LOCK_SINK) - lowestBottom
-		end
+		char:PivotTo(CFrame.new(pivot.Position) * CFrame.Angles(0, yaw, 0))
 	end)
-	table.clear(fullLockSnap)
-	local sinkCF = CFrame.new(0, dy, 0)
+	local joints = {}
+	for _, d in ipairs(char:GetDescendants()) do
+		if d:IsA("Motor6D") then
+			table.insert(joints, d)
+		end
+	end
+	for _, d in ipairs(joints) do
+		pcall(function() d.Transform = CFrame.new() end)
+	end
+	local allParts = {}
+	local lowest = nil
 	for _, part in ipairs(char:GetDescendants()) do
 		if part:IsA("BasePart") then
-			part.CFrame = part.CFrame * sinkCF
+			table.insert(allParts, part)
+			local bottom = part.Position.Y - part.Size.Y / 2
+			if not lowest or bottom < lowest then
+				lowest = bottom
+			end
+		end
+	end
+	if #allParts == 0 or not lowest then
+		pcall(function()
+			if humanoid and humanoid.Parent then
+				humanoid.PlatformStand = false
+				humanoid.JumpPower = 50
+			end
+		end)
+		return
+	end
+	local lift = floatH
+	if groundY then
+		local g = (groundY + floatH) - lowest
+		if g > lift then lift = g end
+	end
+	local cur = char:GetPivot()
+	pcall(function()
+		char:PivotTo(cur + Vector3.new(0, lift, 0))
+	end)
+	table.clear(fullLockSnap)
+	for _, part in ipairs(allParts) do
+		if part.Parent then
 			fullLockSnap[part] = part.CFrame
 		end
 	end
 	fullLockConn = RunService.Heartbeat:Connect(function()
+		if humanoid and humanoid.Parent then
+			humanoid.PlatformStand = true
+			humanoid.JumpPower = 0
+		end
+		for _, d in ipairs(joints) do
+			if d.Parent then
+				pcall(function() d.Transform = CFrame.new() end)
+			end
+		end
 		for part, cf in pairs(fullLockSnap) do
 			if part.Parent then
 				part.CFrame = cf
@@ -922,51 +1297,152 @@ local function unlockCharacterFull()
 	end)
 end
 
+local function ensureFreeMove()
+	unlockCharacterFull()
+	unlockCharacter()
+	if humanoid and humanoid.Parent then
+		pcall(function()
+			humanoid.PlatformStand = false
+			humanoid.JumpPower = 50
+			if humanoid.WalkSpeed <= 0 then humanoid.WalkSpeed = getCurrentSpeed() end
+			humanoid:ChangeState(Enum.HumanoidStateType.Running)
+		end)
+	end
+end
+
+local function guardAimDistance(guardPart)
+	local hrp = char and char:FindFirstChild("HumanoidRootPart")
+	if not hrp or not guardPart then return nil end
+	local p, g = hrp.Position, guardPart.Position
+	local dx, dz = p.X - g.X, p.Z - g.Z
+	return math.sqrt(dx * dx + dz * dz)
+end
+
+local function walkToGuardAndLock(guard, lockDist, zone)
+	local list = getZoneGuardList(zone)
+	if guard then
+		local found = false
+		for _, g in ipairs(list) do
+			if g.model == guard.model then found = true break end
+		end
+		if not found then table.insert(list, guard) end
+	end
+	local elapsed = 0
+	if humanoid and humanoid.Parent then
+		pcall(function() humanoid.WalkSpeed = 16 end)
+	end
+	local locked = false
+	ensureFreeMove()
+	while elapsed < 15 do
+		if not autoRun and not autoPickup then break end
+		local h = char and char:FindFirstChild("HumanoidRootPart")
+		if not h then break end
+		local pos = h.Position
+		local best, bestD = nil, math.huge
+		local humBest, humD = nil, math.huge
+		for _, g in ipairs(list) do
+			local gp = g.part and g.part.Position
+			if gp then
+				local dx = gp.X - pos.X
+				local dz = gp.Z - pos.Z
+				local d = math.sqrt(dx * dx + dz * dz)
+				if d < bestD then bestD, best = d, g end
+				if g.humanoid and d < humD then humD, humBest = d, g end
+			end
+		end
+		local aimM, aimD = best, bestD
+		if humBest then aimM, aimD = humBest, humD end
+		if aimM then
+			local spdNow = humanoid and humanoid.WalkSpeed or 60
+			local capSpd = nil
+			if aimD <= lockDist + 5 then
+				capSpd = 12
+			elseif aimD <= lockDist + 20 then
+				capSpd = 30
+			end
+			if capSpd and spdNow > capSpd then
+				pcall(function() humanoid.WalkSpeed = capSpd end)
+			end
+		end
+		if aimM and aimD <= lockDist then
+			ensureFreeMove()
+			lockCharacterFull()
+			locked = true
+			break
+		end
+		local tp = aimM and aimM.part and aimM.part.Position
+		if not tp then
+			pcall(function() humanoid:Move(Vector3.zero, true) end)
+			break
+		end
+		local dx = tp.X - pos.X
+		local dz = tp.Z - pos.Z
+		local toGoal = Vector3.new(dx, 0, dz).Unit
+		local cam = workspace.CurrentCamera
+		local camCF = cam and cam.CFrame
+		local moveDir = camCF and camCF:VectorToObjectSpace(toGoal) or toGoal
+		pcall(function() humanoid:Move(moveDir, true) end)
+		elapsed += RunService.RenderStepped:Wait()
+	end
+	pcall(function() humanoid:Move(Vector3.zero, true) end)
+	return locked
+end
+
 local function teleportHomeViaGuard()
 
 	local hrp = char and char:FindFirstChild("HumanoidRootPart")
 	if not hrp then return false end
-	local guards = getZoneGuardList()
-	print("[传送回家] 扫描到守卫 " .. #guards .. " 个")
-	local guard, guardDist = findNearestGuard(hrp.Position)
+	local spdBefore = humanoid and humanoid.WalkSpeed or 16
+	if spdBefore < 1 then spdBefore = 16 end
+	local function restoreGuardSpeed()
+		if humanoid and humanoid.Parent then
+			pcall(function() humanoid.WalkSpeed = spdBefore end)
+		end
+	end
+	local zone = lockUtil.guardZone
+	if zone and not zone.Parent then zone = nil end
+	local petZone, petD = nil, nil
+	if lockUtil.petPos and lockUtil.zoneOfPoint then
+		petZone, petD = lockUtil.zoneOfPoint(lockUtil.petPos)
+	end
+	if petZone and petZone.Parent and petZone ~= zone then
+		zone = petZone
+		lockUtil.guardZone = petZone
+	end
+	local guard, guardDist = findNearestGuard(hrp.Position, zone)
 	if not guard then
-		print("[传送回家] 未找到守卫，退回走路回家")
-		lockCharacter()
 		local ok = panTo(PET_RETURN_POS)
-		unlockCharacter()
+		if ok then waitOrStop(1) end
 		return ok
 	end
 	local guardPart = guard.part
-	print("[传送回家] 最近守卫=" .. guard.model.Name .. " 距离=" .. string.format("%.1f", guardDist) .. "m")
-	if guardDist > GUARD_SAFE_DIST then
-		print("[传送回家] 走向守卫安全距离 " .. GUARD_SAFE_DIST .. "m")
-		lockCharacter()
-		if not panTo(guardPart.Position, GUARD_SAFE_DIST) then
-			print("[传送回家] 走路失败，取消本次传送")
-			unlockCharacter()
-			return false
-		end
+	lockUtil.guardZone = zone
+	if not walkToGuardAndLock(guard, GUARD_SAFE_DIST, zone) then
+		restoreGuardSpeed()
+		return false
 	end
-	print("[传送回家] 已到安全距离，全身锁定 2 秒")
-	lockCharacterFull()
+	if not autoInteract then autoInteractLink = true end
 
 	local t = 0
 	while t < GUARD_TELEPORT_WAIT do
 		if not autoRun and not autoPickup then
 			unlockCharacterFull()
+			unlockCharacter()
+			autoInteractLink = false
+			restoreGuardSpeed()
 			return false
 		end
-		local dt = RunService.Heartbeat:Wait()
-		t += dt
+		t += RunService.Heartbeat:Wait()
 	end
-
-
 
 	local originPos = hrp.Position
 	unlockCharacterFull()
+	unlockCharacter()
 	for i = 1, HOME_TELEPORT_LOOPS do
 		if not autoRun and not autoPickup then
-			print("[传送回家] 已停止，中断循环传送")
+			autoInteractLink = false
+			unlockCharacter()
+			restoreGuardSpeed()
 			return false
 		end
 
@@ -981,50 +1457,55 @@ local function teleportHomeViaGuard()
 		pcall(function()
 			hrp.CFrame = CFrame.new(originPos)
 		end)
-		print("[传送回家] 第 " .. i .. "/" .. HOME_TELEPORT_LOOPS .. " 次传送完成")
 		task.wait(1)
 	end
+	autoInteractLink = false
+	unlockCharacter()
+	restoreGuardSpeed()
 	return true
 end
 
 local function doMoveToPetAndBack(pet)
-	local fromPickupFolder = pet.Parent == PICKUP_FOLDER
+	local fromPickupFolder = pet.Parent == workspace:FindFirstChild("AnimalPickups")
+	local deadline = os.clock() + 8
+	local idleT = 0
+	local gotIt = false
 	while not petGone(pet, fromPickupFolder) do
+		if os.clock() > deadline then break end
+		if not autoRun and not autoPickup then break end
+
 		local petPart = getPetPart(pet)
 		if not petPart then break end
 
 		local interactions = collectPetInteractions(pet)
-		local targetPos = petPart.Position
-		if #interactions > 0 then
-			targetPos = interactions[1].part.Position
-		end
-
-		local nearTarget = false
-		if #interactions > 0 then
-			local myPos = char and char:GetPivot().Position
-			if myPos and (interactions[1].part.Position - myPos).Magnitude <= AUTO_INTERACT_RANGE then
-				nearTarget = true
-			end
-		end
-
-		if nearTarget then
-			unlockCharacter()
-			pcall(function() humanoid:Move(Vector3.zero, true) end)
+		if #interactions == 0 then
+			if idleT >= 2 then break end
+			idleT = idleT + 0.1
+			task.wait(0.1)
 		else
-			lockCharacter()
-			if not panTo(targetPos, 1.2) then
-				unlockCharacter()
-				return false
+			idleT = 0
+			local targetPos = interactions[1].part.Position
+
+			local myPos = char and char:GetPivot().Position
+			local needStep = myPos and (targetPos - myPos).Magnitude > 2
+
+			unlockCharacter()
+			if needStep and not fullLockConn then
+				if not panTo(targetPos, 1.2) then
+					unlockCharacter()
+					return false
+				end
 			end
 			pcall(function() humanoid:Move(Vector3.zero, true) end)
-		end
 
-		local gotIt = false
-		if #interactions > 0 then
 			local startT = os.clock()
+			local nearPet = false
 			while os.clock() - startT < 2 do
 				if not autoRun and not autoPickup then break end
-				if petGone(pet, fromPickupFolder) then gotIt = true break end
+				local ppNow = getPetPart(pet)
+				local hrpNow = char and char:FindFirstChild("HumanoidRootPart")
+				if ppNow and hrpNow and (ppNow.Position - hrpNow.Position).Magnitude <= 12 then nearPet = true end
+				if nearPet and petGone(pet, fromPickupFolder) then gotIt = true break end
 				for _, it in ipairs(interactions) do
 					if it.kind == "prompt" then
 						if it.obj.Enabled then triggerPrompt(it.obj) end
@@ -1034,34 +1515,35 @@ local function doMoveToPetAndBack(pet)
 				end
 				if not waitOrStop(PICKUP_TRIGGER_INTERVAL) then break end
 			end
-			if petGone(pet, fromPickupFolder) then gotIt = true end
-		end
+			if nearPet and petGone(pet, fromPickupFolder) then gotIt = true end
 
-		if gotIt then
-			if homeMethod == "teleport" then
-				if not teleportHomeViaGuard() then
+			if gotIt then
+				lockUtil.petPos = petPart.Position
+				if homeMethod == "teleport" then
+					local ok = teleportHomeViaGuard()
+					unlockCharacter()
+					if not ok then
+						waitOrStop(1)
+						return false
+					end
+					return true
+				end
+				unlockCharacter()
+				if not panTo(PET_RETURN_POS) then
 					unlockCharacter()
 					return false
 				end
+				unlockCharacter()
+				waitOrStop(1)
 				return true
 			end
-			lockCharacter()
-			if not panTo(PET_RETURN_POS) then
-				unlockCharacter()
-				return false
-			end
-			unlockCharacter()
-			return true
 		end
-
-		if not autoRun and not autoPickup then
-			unlockCharacter()
-			return false
-		end
-		if not fromPickupFolder then break end
+	end
+	if not petGone(pet, fromPickupFolder) then
+		pickupCooldown[pet] = os.clock() + 5
 	end
 	unlockCharacter()
-	return true
+	return gotIt
 end
 
 local function moveToPetAndBack(pet)
@@ -1073,7 +1555,7 @@ local function moveToPetAndBack(pet)
 	return false
 end
 
-local function startAutoInteract()
+local function startAutoInteract(interval)
 	if interactLoopConn then return end
 	interactLoopConn = task.spawn(function()
 		while autoInteract do
@@ -1097,7 +1579,7 @@ local function startAutoInteract()
 					end
 				end
 			end)
-			task.wait(PICKUP_TRIGGER_INTERVAL)
+			task.wait(interval or PICKUP_TRIGGER_INTERVAL)
 		end
 		interactLoopConn = nil
 	end)
@@ -1177,12 +1659,10 @@ end
 
 local function buyPickaxe(id)
 	fireShop(PickaxeShopRequest, "Buy", id)
-	print("购买稿子：" .. PICKAXE_SHOP[id].name)
 end
 
 local function buyTrail(id)
 	fireShop(TrailShopRequest, "Buy", id)
-	print("购买踪迹：" .. TRAIL_SHOP[id].name)
 end
 
 
@@ -1221,7 +1701,8 @@ local function startAutoUpgradeTreadmill()
 	if upgradeTreadmillConn then return end
 	upgradeTreadmillConn = task.spawn(function()
 		while autoUpgradeTreadmill do
-			game:GetService("ReplicatedStorage"):WaitForChild("UpgradeTreadmillRequest"):FireServer()
+			local r = game:GetService("ReplicatedStorage"):FindFirstChild("UpgradeTreadmillRequest")
+			if r then r:FireServer() end
 			task.wait(0.5)
 		end
 		upgradeTreadmillConn = nil
@@ -1233,7 +1714,8 @@ local function startAutoUpgradePlot()
 	if upgradePlotConn then return end
 	upgradePlotConn = task.spawn(function()
 		while autoUpgradePlot do
-			game:GetService("ReplicatedStorage"):WaitForChild("UpgradePlotRequest"):FireServer()
+			local r = game:GetService("ReplicatedStorage"):FindFirstChild("UpgradePlotRequest")
+			if r then r:FireServer() end
 			task.wait(0.5)
 		end
 		upgradePlotConn = nil
@@ -1246,7 +1728,8 @@ local function startAutoEquipBest()
 	equipBestConn = task.spawn(function()
 		while autoEquipBest do
 			local args = { "EquipBest" }
-			game:GetService("ReplicatedStorage"):WaitForChild("PetsInventoryRemote"):FireServer(unpack(args))
+			local r = game:GetService("ReplicatedStorage"):FindFirstChild("PetsInventoryRemote")
+			if r then r:FireServer(unpack(args)) end
 			task.wait(0.5)
 		end
 		equipBestConn = nil
@@ -1256,7 +1739,6 @@ end
 local function getMyPlot()
 	local plotsFolder = workspace:FindFirstChild("Plots")
 	if not plotsFolder then
-		print("自动回家：找不到 workspace.Plots")
 		return nil
 	end
 	local myName = string.lower(player.Name)
@@ -1318,81 +1800,69 @@ local function getMyPlot()
 
 	local fallback = plotsFolder:FindFirstChild("Base_2")
 	if fallback then
-		print("自动回家：归属检测未命中，使用兜底自家 Base_2")
 		return fallback
 	end
 
-
-	pcall(function()
-		print("自动回家：玩家名=" .. player.Name .. " ID=" .. player.UserId)
-		for _, ch in ipairs(plotsFolder:GetChildren()) do
-			local parts = { "[" .. tostring(ch.ClassName) .. "]" .. ch.Name }
-			for _, c2 in ipairs(ch:GetChildren()) do
-				local extra = ""
-				if c2:IsA("ValueBase") then
-					extra = "=" .. tostring(c2.Value)
-				elseif c2:IsA("Model") or c2:IsA("Folder") then
-					local subn = {}
-					for _, c3 in ipairs(c2:GetChildren()) do
-						table.insert(subn, c3.Name)
-					end
-					extra = "{子:" .. table.concat(subn, ",") .. "}"
-				end
-				table.insert(parts, c2.Name .. extra)
-			end
-			print("自动回家Plots[" .. ch.Name .. "]：" .. table.concat(parts, " | "))
-		end
-	end)
 	return nil
 end
 
 local function walkToPlot(targetPos, arriveDist)
-	if not char or not char.Parent then return false end
-	arriveDist = arriveDist or 2
-	if keepAliveConn then
-		keepAliveConn:Disconnect()
-		keepAliveConn = nil
+	local function cancel()
+		return not autoHome
 	end
-	if humanoid and humanoid.Parent then
-		pcall(function()
-			humanoid.PlatformStand = false
-			humanoid.JumpPower = 50
-			humanoid:ChangeState(Enum.HumanoidStateType.Running)
-		end)
-	end
-	local startPos = char:GetPivot().Position
-	local goal = Vector3.new(targetPos.X, startPos.Y, targetPos.Z)
-	local elapsed = 0
-	while elapsed < 30 do
-		if not autoHome then
-			pcall(function() humanoid:Move(Vector3.zero, true) end)
-			return false
-		end
-		local curHrp = char:FindFirstChild("HumanoidRootPart")
-		if not curHrp then return false end
-		local curPos = curHrp.Position
-		local dir = Vector3.new(goal.X - curPos.X, 0, goal.Z - curPos.Z)
-		if dir.Magnitude < arriveDist then break end
-		local toGoal = dir.Unit
-		local cam = workspace.CurrentCamera
-		local camCF = cam and cam.CFrame
-		local camDir = camCF and camCF:VectorToObjectSpace(toGoal) or toGoal
-		pcall(function() humanoid:Move(camDir, true) end)
-		local dt = RunService.RenderStepped:Wait()
-		elapsed += dt
-	end
-	pcall(function() humanoid:Move(Vector3.zero, true) end)
-	return true
+	local r = lockUtil.navWalk(targetPos, arriveDist, { maxTime = 30, cancel = cancel })
+	return r ~= "stop"
 end
 
 local autoHomeConn = nil
 local function startAutoHome()
 	if autoHomeConn then return end
 	autoHomeConn = task.spawn(function()
+		local treadCache = nil
+		local treadRecheck = 0
+		local function findTreadmill(root)
+			if not root then return nil end
+			local function hasTread(inst)
+				return string.find(string.lower(inst.Name), "treadmill", 1, true) ~= nil
+			end
+			for _, ch in ipairs(root:GetChildren()) do
+				if hasTread(ch) then
+					if ch:IsA("Folder") then
+						local inner = ch:FindFirstChildWhichIsA("Model") or ch:FindFirstChildWhichIsA("BasePart")
+						if inner then return inner end
+					end
+					return ch
+				end
+			end
+			for _, ch in ipairs(root:GetDescendants()) do
+				if (ch:IsA("Model") or ch:IsA("BasePart")) and hasTread(ch) then
+					return ch
+				end
+			end
+			for _, ch in ipairs(root:GetDescendants()) do
+				if ch:IsA("ProximityPrompt") and string.find(string.lower(ch.Name), "tread", 1, true) then
+					local top = ch
+					while top.Parent and top.Parent ~= root do
+						top = top.Parent
+					end
+					if top:IsA("Folder") then
+						top = top:FindFirstChildWhichIsA("Model") or top:FindFirstChildWhichIsA("BasePart") or top
+					end
+					return top
+				end
+			end
+			return nil
+		end
 		while autoHome do
 			local plot = getMyPlot()
 			if plot then
-				local treadmill = plot:FindFirstChild("Futuristic Treadmill")
+				local now = os.clock()
+				if treadCache and (not treadCache:IsDescendantOf(plot) or now >= treadRecheck) then treadCache = nil end
+				if not treadCache then
+					treadCache = findTreadmill(plot)
+					treadRecheck = now + 3
+				end
+				local treadmill = treadCache
 				local homePart = plot:FindFirstChild("Baseplate") or plot.PrimaryPart or plot:FindFirstChildWhichIsA("BasePart")
 				local treadPart = nil
 				if treadmill then
@@ -1402,6 +1872,7 @@ local function startAutoHome()
 						treadPart = treadmill:FindFirstChildWhichIsA("BasePart")
 					end
 				end
+				if not treadPart then treadCache = nil end
 				local curHrp = char and char:FindFirstChild("HumanoidRootPart")
 				if curHrp then
 					local curPos = curHrp.Position
@@ -1559,73 +2030,20 @@ local function startAutoGoRift()
 	end)
 end
 
-local function stopAutoRun()
-	autoRun = false
-	unlockCharacter()
-	if autoRunToggle then
-		pcall(function() autoRunToggle:SetValue(false) end)
-	end
-end
-
 local function panToPickupAware(targetPos, arriveDist)
-	if not char or not char.Parent then return false end
 	if not autoRun and not autoPickup then return false end
-	arriveDist = arriveDist or 2
-
-	if keepAliveConn then
-		keepAliveConn:Disconnect()
-		keepAliveConn = nil
-	end
-	if humanoid and humanoid.Parent then
-		pcall(function()
-			humanoid.PlatformStand = false
-			humanoid.JumpPower = 50
-			humanoid:ChangeState(Enum.HumanoidStateType.Running)
-		end)
-	end
-
-	local startPos = char:GetPivot().Position
-	local goal = Vector3.new(targetPos.X, startPos.Y, targetPos.Z)
-
-	local arrived = false
-	local elapsed = 0
-	while elapsed < 60 do
-		if not autoRun and not autoPickup then
-			pcall(function() humanoid:Move(Vector3.zero, true) end)
-			return false
-		end
+	local petHit = false
+	local function cancel()
+		if not autoRun and not autoPickup then return true end
 		if autoPickup and findAnyPetToPickup() then
-			pcall(function() humanoid:Move(Vector3.zero, true) end)
-			return "pet"
+			petHit = true
+			return true
 		end
-
-		pcall(function()
-			if keepAliveConn then
-				keepAliveConn:Disconnect()
-				keepAliveConn = nil
-			end
-			if humanoid and humanoid.Parent then
-				humanoid.PlatformStand = false
-				humanoid.JumpPower = 50
-				humanoid:ChangeState(Enum.HumanoidStateType.Running)
-			end
-		end)
-		local curHrp = char:FindFirstChild("HumanoidRootPart")
-		if not curHrp then return false end
-		local curPos = curHrp.Position
-		local dir = Vector3.new(goal.X - curPos.X, 0, goal.Z - curPos.Z)
-		if dir.Magnitude < arriveDist then arrived = true break end
-		local toGoal = dir.Unit
-		local cam = workspace.CurrentCamera
-		local camCF = cam and cam.CFrame
-		local camDir = camCF and camCF:VectorToObjectSpace(toGoal) or toGoal
-		pcall(function() humanoid:Move(camDir, true) end)
-		local dt = RunService.RenderStepped:Wait()
-		elapsed += dt
+		return false
 	end
-
-	pcall(function() humanoid:Move(Vector3.zero, true) end)
-	return arrived
+	local r = lockUtil.navWalk(targetPos, arriveDist, { cancel = cancel })
+	if petHit then return "pet" end
+	return r == "arrive"
 end
 
 local function handlePetPriority()
@@ -1637,8 +2055,15 @@ local function handlePetPriority()
 end
 
 local function approachWithPetPriority(standPos)
+	local busyWait = 0
+	while pickupBusy and autoRun and busyWait < 20 do
+		busyWait += RunService.Heartbeat:Wait()
+	end
+	if not autoRun and not autoPickup then return false end
 	local r = panToPickupAware(standPos)
-	while r == "pet" do
+	local guard = 0
+	while r == "pet" and guard < 3 do
+		guard += 1
 		handlePetPriority()
 		if not autoRun then return false end
 		r = panToPickupAware(standPos)
@@ -1666,6 +2091,8 @@ local function farmAllZones()
 						local eggHp = getEggHealth(egg)
 						if eggHp == nil or eggHp > 0 then
 							foundAny = true
+							lockUtil.guardZone = zone
+							lockUtil.eggPos = part.Position
 							local eggPos = part.Position
 							local standPos = eggPos
 							local curHrp = char:FindFirstChild("HumanoidRootPart")
@@ -1680,12 +2107,12 @@ local function farmAllZones()
 								end
 							end
 
-							if not approachWithPetPriority(standPos) then return end
-							lockCharacter()
+							if not approachWithPetPriority(standPos) then break end
 
 							local timeout = eggHp and 60 or 10
 							local elapsed = 0
 							local attackCd = 0
+							local lastHealth = humanoid and humanoid.Health or 100
 							while elapsed < timeout do
 								if not autoRun then return end
 
@@ -1693,19 +2120,61 @@ local function farmAllZones()
 								eggHp = getEggHealth(egg)
 								if eggHp ~= nil and eggHp <= 0 then break end
 
-								if autoPickup and findAnyPetToPickup() then
+								if autoPickup and not pickupBusy and findAnyPetToPickup() then
 									unlockCharacter()
-									if not approachWithPetPriority(standPos) then return end
-									lockCharacter()
+									if not approachWithPetPriority(standPos) then break end
 									if not part.Parent then break end
 									eggHp = getEggHealth(egg)
 									if eggHp ~= nil and eggHp <= 0 then break end
 								end
 
-								local h = char:FindFirstChild("HumanoidRootPart")
+								local curHealth = humanoid and humanoid.Health or lastHealth
+								local gotHit = (not pickupBusy) and curHealth < lastHealth - 0.5
+								lastHealth = curHealth
+
+								if not gotHit and not pickupBusy then
+									local hh = char and char:FindFirstChild("HumanoidRootPart")
+									if hh then
+										local dxx = hh.Position.X - standPos.X
+										local dzz = hh.Position.Z - standPos.Z
+										if (dxx * dxx + dzz * dzz) > 144 then gotHit = true end
+									end
+								end
+								local h = (not pickupBusy) and char:FindFirstChild("HumanoidRootPart")
 								if h then
-									local curPos = h.Position
 									local eggPosNow = part.Position
+									if gotHit then
+										RunService.Heartbeat:Wait()
+										local gY0 = getGroundY(Vector3.new(standPos.X, standPos.Y + 4, standPos.Z), true)
+										lockUtil.placeHover(standPos.X, standPos.Z, gY0 or standPos.Y, 2)
+										h.AssemblyLinearVelocity = Vector3.zero
+										lockCharacter()
+										local settleElapsed = 0
+										local settleAtk = 0
+										while settleElapsed < 0.5 do
+											if not autoRun then unlockCharacter() return end
+											if not part.Parent then break end
+											if autoPickup and findAnyPetToPickup() then
+												unlockCharacter()
+												if not approachWithPetPriority(standPos) then break end
+											end
+											if not part.Parent then break end
+											eggHp = getEggHealth(egg)
+											if eggHp ~= nil and eggHp <= 0 then break end
+											local dt2 = RunService.Heartbeat:Wait()
+											settleElapsed = settleElapsed + dt2
+											settleAtk = settleAtk + dt2
+											if settleAtk >= 0.1 then
+												attackEgg(part)
+												settleAtk = 0
+											end
+										end
+										unlockCharacter()
+										if not part.Parent then break end
+										eggHp = getEggHealth(egg)
+										if eggHp ~= nil and eggHp <= 0 then break end
+									end
+									local curPos = h.Position
 									h.CFrame = CFrame.lookAt(
 										Vector3.new(curPos.X, curPos.Y, curPos.Z),
 										Vector3.new(eggPosNow.X, curPos.Y, eggPosNow.Z)
@@ -1714,7 +2183,7 @@ local function farmAllZones()
 
 								local dt = RunService.Heartbeat:Wait()
 								attackCd += dt
-								if attackCd >= 0.35 then
+								if attackCd >= 0.35 and not pickupBusy then
 									attackEgg(part)
 									attackCd = 0
 								end
@@ -1758,9 +2227,15 @@ local EGG_ALIAS = {
 	["Sun"] = "太阳蛋", ["Solar"] = "太阳蛋",
 	["Starry"] = "星空蛋", ["Star"] = "星空蛋",
 	["Blackhole"] = "黑洞蛋", ["BlackHole"] = "黑洞蛋",
+	["Plasma"] = "等离子蛋", ["Plasma Egg"] = "等离子蛋",
+	["Nebula"] = "星云蛋", ["Nebula Egg"] = "星云蛋",
+	["Supernova"] = "超新星蛋", ["Supernova Egg"] = "超新星蛋",
 }
 
+local eggNameCache = {}
 local function normalizeEggName(raw, obj)
+	local key = raw or ""
+	if eggNameCache[key] ~= nil then return eggNameCache[key] or nil end
 	local function matchString(s)
 		if not s then return nil end
 		local lower = string.lower(s)
@@ -1779,17 +2254,18 @@ local function normalizeEggName(raw, obj)
 	end
 
 	local direct = matchString(raw)
-	if direct then return direct end
+	if direct then eggNameCache[key] = direct return direct end
 
 	if obj then
 		for _, d in ipairs(obj:GetDescendants()) do
 			if d ~= obj and d.Name then
 				local sub = matchString(d.Name)
-				if sub then return sub end
+				if sub then eggNameCache[key] = sub return sub end
 			end
 		end
 	end
 
+	eggNameCache[key] = false
 	return nil
 end
 
@@ -1873,7 +2349,8 @@ local function scanEggAttributes(obj)
 	local data = scanAll(obj)
 	local luck = findMaxNumber(data, { "luck", "幸运" })
 	local price = findValue(data, { "price", "worth", "cost", "money", "sell", "reward", "payout", "cash", "value" })
-	return luck, price
+	local weight = findValue(data, { "weight", "kg", "mass", "重量" })
+	return luck, price, weight
 end
 
 local function scanPetAttributes(obj)
@@ -1905,7 +2382,7 @@ end
 
 local function buildEggText(obj)
 	local ok, result = pcall(function()
-		local luck, price = scanEggAttributes(obj)
+		local luck, price, weight = scanEggAttributes(obj)
 		local lines = {}
 
 		local eggName = normalizeEggName(obj.Name, obj)
@@ -1929,7 +2406,7 @@ local function buildEggText(obj)
 
 		table.insert(lines, string.format('<font color="%s">%s</font>', rarityColor, rarityCn))
 
-		local eggWeight = getEggWeight(eggName)
+		local eggWeight = weight or getEggWeight(eggName)
 		if eggWeight then
 			table.insert(lines, string.format('<font color="%s">%s</font>', rarityColor, formatWeight(eggWeight)))
 		end
@@ -2080,7 +2557,8 @@ local function updateEsp(cache, isPet)
 end
 
 local function refreshPetEsp()
-	for _, pet in ipairs(PICKUP_FOLDER:GetChildren()) do
+	local pickups = workspace:FindFirstChild("AnimalPickups")
+	for _, pet in ipairs(pickups and pickups:GetChildren() or {}) do
 		createEsp(pet, petEspCache, "PetBB", true)
 	end
 end
@@ -2106,24 +2584,27 @@ local function refreshEggEsp()
 	end
 end
 
-PICKUP_FOLDER.ChildAdded:Connect(function(pet)
-	if petEspEnabled then
-		task.wait(0.2)
-		if pet.Parent then createEsp(pet, petEspCache, "PetBB", true) end
-	end
-	if autoPickup then
-		task.wait(0.05)
-		if pet.Parent then
-			local petPart = getPetPart(pet)
-			if petPart and matchesSelectedPetName(pet) then
-				moveToPetAndBack(pet)
+task.spawn(function()
+	local folder = workspace:FindFirstChild("AnimalPickups") or waitChildLoop(workspace, "AnimalPickups")
+	folder.ChildAdded:Connect(function(pet)
+		if petEspEnabled then
+			task.wait(0.2)
+			if pet.Parent then createEsp(pet, petEspCache, "PetBB", true) end
+		end
+		if autoPickup then
+			task.wait(0.05)
+			if pet.Parent then
+				local petPart = getPetPart(pet)
+				if petPart and matchesSelectedPetName(pet) then
+					moveToPetAndBack(pet)
+				end
 			end
 		end
-	end
-end)
+	end)
 
-PICKUP_FOLDER.ChildRemoved:Connect(function(pet)
-	removeEsp(pet, petEspCache)
+	folder.ChildRemoved:Connect(function(pet)
+		removeEsp(pet, petEspCache)
+	end)
 end)
 
 task.spawn(function()
@@ -2194,85 +2675,85 @@ local function stopAntiAFK()
 	end
 end
 
-local Window = Library:CreateWindow({
+local Window = WindUI:CreateWindow({
 	Title = "打破并偷走一个鸡蛋",
-	Footer = "XJW",
-	Center = true,
-	AutoShow = true,
+	Author = "由i制作",
+	Folder = "EggAuto",
+	Size = UDim2.fromOffset(420, 440),
+	Theme = "Dark",
+	HideSearchBar = true,
 })
 
+local BrandLabel = Instance.new("TextLabel")
+BrandLabel.Name = "XJW"
+BrandLabel.Text = "XJW"
+BrandLabel.Font = Enum.Font.GothamBold
+BrandLabel.TextSize = 16
+BrandLabel.BackgroundTransparency = 1
+BrandLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+BrandLabel.TextXAlignment = Enum.TextXAlignment.Left
+BrandLabel.AutomaticSize = Enum.AutomaticSize.X
+BrandLabel.Size = UDim2.new(0, 0, 0, 22)
+BrandLabel.LayoutOrder = 1
+BrandLabel.Parent = Window.UIElements.Main.Main.Topbar.Left
+
 local Tabs = {
-	Announce = Window:AddTab("公告", "info"),
-	Main = Window:AddTab("主页", "house"),
-	Purchase = Window:AddTab("购买", "coins"),
-	Activity = Window:AddTab("活动", "flame"),
-	Esp = Window:AddTab("透视", "eye"),
-	["UI 设置"] = Window:AddTab("UI 设置", "settings"),
+	Announce = Window:Tab({ Title = "公告", Icon = "table-of-contents", Locked = false }),
+	Main = Window:Tab({ Title = "主页", Icon = "settings", Locked = false }),
+	Purchase = Window:Tab({ Title = "购买", Icon = "monitor", Locked = false }),
+	Activity = Window:Tab({ Title = "活动", Icon = "sparkles", Locked = false }),
+	Esp = Window:Tab({ Title = "透视", Icon = "command", Locked = false }),
+	Treadmill = Window:Tab({ Title = "跑步机", Icon = "activity", Locked = false }),
+	["UI 设置"] = Window:Tab({ Title = "UI 设置", Icon = "settings", Locked = false }),
 }
 
-local AnnounceBox = Tabs.Announce:AddLeftGroupbox("公告")
-local announceShown = pcall(function()
-	AnnounceBox:AddLabel("AnnounceText", { Text = "10月11日: 传送回拿宠物已绕过反作弊" })
-end)
-if not announceShown then
-	pcall(function()
-		AnnounceBox:AddButton({ Text = "10月11日: 传送回拿宠物已绕过反作弊", Func = function() end })
-	end)
-end
+local AnnounceTab = Tabs.Announce
+AnnounceTab:Section({ Title = "公告", TextXAlignment = "Left", TextSize = 17 })
+AnnounceTab:Paragraph({ Title = "10月13日", Desc = "已修复传送宠物 增加新区域蛋和宠物和品质 防卡顿升级" })
+AnnounceTab:Paragraph({ Title = "10月11日", Desc = "传送回拿宠物已绕过反作弊" })
 
-local BossBox = Tabs.Activity:AddLeftGroupbox("恶魔之王")
-BossBox:AddToggle("AutoWalkBossToggle", { Text = "自动走到恶魔之王", Default = false }):OnChanged(function(v)
+local ActivityTab = Tabs.Activity
+ActivityTab:Section({ Title = "恶魔之王", TextXAlignment = "Left", TextSize = 17 })
+ActivityTab:Toggle({ Title = "自动走到恶魔之王", Default = false, Callback = function(v)
 	autoWalkBoss = v
 	if v then startAutoWalkBoss() end
-end)
-
-BossBox:AddToggle("AutoAttackBossToggle", { Text = "自动攻击恶魔之王", Default = false }):OnChanged(function(v)
+end })
+ActivityTab:Toggle({ Title = "自动攻击恶魔之王", Default = false, Callback = function(v)
 	autoAttackBoss = v
 	if v then startAutoAttackBoss() end
-end)
-
-local RiftBox = Tabs.Activity:AddLeftGroupbox("裂缝")
-RiftBox:AddToggle("AutoGoRiftToggle", { Text = "自动前往裂缝", Default = false }):OnChanged(function(v)
+end })
+ActivityTab:Section({ Title = "裂缝", TextXAlignment = "Left", TextSize = 17 })
+ActivityTab:Toggle({ Title = "自动前往裂缝", Default = false, Callback = function(v)
 	autoGoRift = v
 	if v then startAutoGoRift() end
-end)
+end })
 
-local UpgradeBox = Tabs.Purchase:AddLeftGroupbox("自动升级")
-UpgradeBox:AddToggle("AutoUpgradePlotToggle", { Text = "自动升级宠物格子", Default = false }):OnChanged(function(v)
+local PurchaseTab = Tabs.Purchase
+PurchaseTab:Section({ Title = "自动升级", TextXAlignment = "Left", TextSize = 17 })
+PurchaseTab:Toggle({ Title = "自动升级宠物格子", Default = false, Callback = function(v)
 	autoUpgradePlot = v
 	if v then startAutoUpgradePlot() end
-end)
-
-local PickaxeBox = Tabs.Purchase:AddLeftGroupbox("稿子商店")
-autoBuyPickaxeToggle = PickaxeBox:AddToggle("AutoBuyPickaxeToggle", { Text = "自动购买稿子", Default = false })
-autoBuyPickaxeToggle:OnChanged(function(v)
+end })
+PurchaseTab:Section({ Title = "稿子商店", TextXAlignment = "Left", TextSize = 17 })
+autoBuyPickaxeToggle = PurchaseTab:Toggle({ Title = "自动购买稿子", Default = false, Callback = function(v)
 	autoBuyPickaxe = v
-	if v then
-		startAutoBuyPickaxe()
-	end
-end)
+	if v then startAutoBuyPickaxe() end
+end })
 for i, item in ipairs(PICKAXE_SHOP) do
-	PickaxeBox:AddButton({ Text = item.cn .. "稿子", Func = function()
+	PurchaseTab:Button({ Title = item.cn .. "稿子", Callback = function()
 		buyPickaxe(i)
 	end })
 end
-
-local TrailBox = Tabs.Purchase:AddRightGroupbox("踪迹商店")
-autoBuyTrailToggle = TrailBox:AddToggle("AutoBuyTrailToggle", { Text = "自动购买踪迹", Default = false })
-autoBuyTrailToggle:OnChanged(function(v)
+PurchaseTab:Section({ Title = "踪迹商店", TextXAlignment = "Left", TextSize = 17 })
+autoBuyTrailToggle = PurchaseTab:Toggle({ Title = "自动购买踪迹", Default = false, Callback = function(v)
 	autoBuyTrail = v
-	if v then
-		startAutoBuyTrail()
-	end
-end)
+	if v then startAutoBuyTrail() end
+end })
 for i, item in ipairs(TRAIL_SHOP) do
-	TrailBox:AddButton({ Text = item.cn .. "踪迹", Func = function()
+	PurchaseTab:Button({ Title = item.cn .. "踪迹", Callback = function()
 		buyTrail(i)
 	end })
 end
-
-local MainBox = Tabs.Main:AddLeftGroupbox("自动化(两个一起开的话优先开第1个再开第2个)")
-
 local antiLag = false
 local antiLagTask = nil
 local Lighting = game:GetService("Lighting")
@@ -2288,6 +2769,22 @@ pcall(function() RS = game:GetService("RenderSettings") end)
 local function deleteZoneDecor()
 	local zoneBuilds = workspace.Build and workspace.Build:FindFirstChild("ZoneBuilds")
 	if not zoneBuilds then return end
+	local extraPaths = {
+		{ "Zone10", "AlienMap" },
+		{ "Zone9", "Galaxy/space aura" },
+		{ "Zone9", "Stars" },
+		{ "Zone8", "Build" },
+		{ "Zone7", "Build" },
+	}
+	for _, spec in ipairs(extraPaths) do
+		local zone = zoneBuilds:FindFirstChild(spec[1])
+		if zone then
+			local node = zone:FindFirstChild(spec[2])
+			if node then
+				pcall(function() node:Destroy() end)
+			end
+		end
+	end
 	for _, zone in ipairs(zoneBuilds:GetChildren()) do
 		local decor = zone:FindFirstChild("Decor")
 		if decor then
@@ -2360,6 +2857,7 @@ end
 local FX_CLASSES = {
 	ParticleEmitter = true, Beam = true, Fire = true, Smoke = true,
 	Sparkles = true, Trail = true, Explosion = true, Sound = true,
+	PointLight = true, SurfaceLight = true, SpotLight = true,
 }
 local function killFx(root)
 	for _, d in ipairs(root:GetDescendants()) do
@@ -2383,7 +2881,6 @@ local function startAntiLag()
 	pcall(function() deleteOtherPlots() end)
 	pcall(function() killTextures(workspace) end)
 	pcall(function() applyGraphicsLow() end)
-	print("防卡顿：已删除9区Decor(含各区Bones/Cactus)、关闭9区地面(Parts)纹理、删除其他家、关闭全图纹理并设为最低画质；分辨率/显卡驱动/后台程序请游戏外手动处理")
 	antiLagTask = task.spawn(function()
 		while antiLag do
 			pcall(function() killFx(workspace) end)
@@ -2405,140 +2902,94 @@ local function stopAntiLag()
 	antiLag = false
 end
 
-autoRunToggle = MainBox:AddToggle("AutoRunToggle", { Text = "自动打蛋", Default = false })
-autoRunToggle:OnChanged(function(v)
+local MainTab = Tabs.Main
+MainTab:Section({ Title = "自动化(两个一起开的话优先开第1个再开第2个)", TextXAlignment = "Left", TextSize = 17 })
+autoRunToggle = MainTab:Toggle({ Title = "自动打蛋", Default = false, Callback = function(v)
 	autoRun = v
-	if v then
-		if hasSelectedEgg() and not pickupBusy then
-			lockCharacter()
-		else
-			unlockCharacter()
-		end
-	else
-		unlockCharacter()
-	end
-end)
-
-MainBox:AddToggle("AutoPickupToggle", { Text = "自动拿宠物", Default = false }):OnChanged(function(v)
+	unlockCharacter()
+end })
+MainTab:Toggle({ Title = "自动拿宠物", Default = false, Callback = function(v)
 	autoPickup = v
-	if v then
-		if autoRun and not pickupBusy then lockCharacter() end
-	else
-		if not autoRun then unlockCharacter() end
-	end
-end)
-
-MainBox:AddDropdown("HomeMethodDropdown", {
-	Values = { "走回", "传送(开自动拾取)" },
-	Default = "走回",
-	Text = "拿宠物方式",
-}):OnChanged(function(v)
+	if not v and not autoRun then unlockCharacter() end
+end })
+MainTab:Dropdown({ Title = "拿宠物回家方式", Values = { "走回", "传送" }, Value = "走回", Callback = function(v)
 	if type(v) == "table" then return end
 	homeMethod = (v == "传送") and "teleport" or "walk"
-end)
+end })
 
-local OtherBox = Tabs.Main:AddLeftGroupbox("其他")
-OtherBox:AddToggle("AutoEquipBestToggle", { Text = "自动装备最好宠物", Default = false }):OnChanged(function(v)
+MainTab:Dropdown({ Title = "选择蛋类型", Values = EGG_OPTIONS, Value = {}, Multi = true, AllowNone = true, Callback = function(Values)
+	selectedEggEnglish = {}
+	if type(Values) == "table" then
+		for _, d in ipairs(Values) do
+			local cn = (type(d) == "table" and d.Title) or d
+			local en = EGG_CN_TO_EN[cn]
+			if en then selectedEggEnglish[en] = true end
+		end
+	end
+end })
+MainTab:Dropdown({ Title = "选择宠物品质", Values = PET_RARITY_OPTIONS, Value = {}, Multi = true, AllowNone = true, Callback = function(Values)
+	selectedPetRarities = {}
+	if type(Values) == "table" then
+		for _, d in ipairs(Values) do
+			local cn = (type(d) == "table" and d.Title) or d
+			local en = RARITY_CN_TO_EN[cn] or cn
+			selectedPetRarities[en] = true
+		end
+	end
+end })
+
+MainTab:Section({ Title = "其他", TextXAlignment = "Left", TextSize = 17 })
+MainTab:Toggle({ Title = "自动装备最好宠物", Default = false, Callback = function(v)
 	autoEquipBest = v
 	if v then startAutoEquipBest() end
-end)
-
-OtherBox:AddToggle("AntiAFKToggle", { Text = "防挂机", Default = false }):OnChanged(function(v)
+end })
+MainTab:Toggle({ Title = "防挂机", Default = false, Callback = function(v)
 	antiAFK = v
 	if v then
 		startAntiAFK()
 	else
 		stopAntiAFK()
 	end
-end)
-
-OtherBox:AddToggle("AntiLagToggle", { Text = "防卡顿优化", Default = false }):OnChanged(function(v)
+end })
+MainTab:Toggle({ Title = "防卡顿优化", Default = true, Callback = function(v)
 	antiLag = v
 	if v then
 		startAntiLag()
 	else
 		stopAntiLag()
 	end
-end)
-
-local TreadmillBox = Tabs.Main:AddLeftGroupbox("跑步机")
-TreadmillBox:AddToggle("AutoHomeToggle", { Text = "自动跑步机", Default = false }):OnChanged(function(v)
+end })
+Tabs.Treadmill:Section({ Title = "跑步机", TextXAlignment = "Left", TextSize = 17 })
+Tabs.Treadmill:Toggle({ Title = "自动跑步机", Default = false, Callback = function(v)
 	autoHome = v
 	if v then startAutoHome() end
-end)
-
-TreadmillBox:AddToggle("AutoUpgradeTreadmillToggle", { Text = "自动升级跑步机", Default = false }):OnChanged(function(v)
+end })
+Tabs.Treadmill:Toggle({ Title = "自动升级跑步机", Default = false, Callback = function(v)
 	autoUpgradeTreadmill = v
 	if v then startAutoUpgradeTreadmill() end
-end)
+end })
 
-local FuncBox = Tabs.Main:AddLeftGroupbox("功能")
-FuncBox:AddToggle("AutoInteractToggle", { Text = "自动拾取", Default = false }):OnChanged(function(v)
+MainTab:Section({ Title = "功能", TextXAlignment = "Left", TextSize = 17 })
+AutoInteractToggle = MainTab:Toggle({ Title = "自动拾取", Default = false, Callback = function(v)
 	autoInteract = v
 	if v then
 		startAutoInteract()
 	else
 		stopAutoInteract()
 	end
-end)
-
-FuncBox:AddToggle("AutoAttackToggle", { Text = "自动攻击", Default = false }):OnChanged(function(v)
+end })
+MainTab:Toggle({ Title = "自动攻击", Default = false, Callback = function(v)
 	autoAttack = v
-end)
+end })
 
-local SelectBox = Tabs.Main:AddRightGroupbox("选择设置")
 
-SelectBox:AddDropdown("EggSelect", {
-	Values = EGG_OPTIONS,
-	Default = {},
-	Multi = true,
-	Text = "选择打蛋类型(没选=全部)",
-}):OnChanged(function(Values)
-	selectedEggEnglish = {}
-	if type(Values) == "table" then
-		for k, _ in pairs(Values) do
-			local cn = tostring(k)
-			local en = EGG_CN_TO_EN[cn]
-			if en then selectedEggEnglish[en] = true end
-		end
-	end
-	if autoRun then
-		if hasSelectedEgg() and not pickupBusy then
-			lockCharacter()
-		else
-			unlockCharacter()
-		end
-	end
-end)
-
-SelectBox:AddDropdown("PetSelect", {
-	Values = PET_RARITY_OPTIONS,
-	Default = {},
-	Multi = true,
-	Text = "选择宠物品质(没选=全部)",
-}):OnChanged(function(Values)
-	selectedPetRarities = {}
-	if type(Values) == "table" then
-		for k, _ in pairs(Values) do
-			local cn = tostring(k)
-			local en = RARITY_CN_TO_EN[cn] or cn
-			selectedPetRarities[en] = true
-		end
-	end
-end)
-
-local EspBox = Tabs.Esp:AddLeftGroupbox("透视开关")
-
-EspBox:AddDropdown("PetEspFilter", {
-	Values = PET_RARITY_OPTIONS,
-	Default = {},
-	Multi = true,
-	Text = "宠物透视品质筛选(没选=全部)",
-}):OnChanged(function(Values)
+local EspTab = Tabs.Esp
+EspTab:Section({ Title = "透视开关", TextXAlignment = "Left", TextSize = 17 })
+EspTab:Dropdown({ Title = "宠物透视品质筛选", Values = PET_RARITY_OPTIONS, Value = {}, Multi = true, AllowNone = true, Callback = function(Values)
 	petEspFilter = {}
 	if type(Values) == "table" then
-		for k, _ in pairs(Values) do
-			local cn = tostring(k)
+		for _, d in ipairs(Values) do
+			local cn = (type(d) == "table" and d.Title) or d
 			local en = RARITY_CN_TO_EN[cn] or cn
 			petEspFilter[en] = true
 		end
@@ -2548,9 +2999,8 @@ EspBox:AddDropdown("PetEspFilter", {
 		petEspCache[pet] = nil
 	end
 	if petEspEnabled then refreshPetEsp() end
-end)
-
-EspBox:AddToggle("PetEspToggle", { Text = "宠物透视", Default = false }):OnChanged(function(v)
+end })
+EspTab:Toggle({ Title = "宠物透视", Default = false, Callback = function(v)
 	petEspEnabled = v
 	if v then
 		refreshPetEsp()
@@ -2560,18 +3010,13 @@ EspBox:AddToggle("PetEspToggle", { Text = "宠物透视", Default = false }):OnC
 			petEspCache[pet] = nil
 		end
 	end
-end)
-
-EspBox:AddDropdown("EggEspFilter", {
-	Values = EGG_OPTIONS,
-	Default = {},
-	Multi = true,
-	Text = "蛋透视筛选(没选=全部)",
-}):OnChanged(function(Values)
+end })
+EspTab:Dropdown({ Title = "蛋透视筛选", Values = EGG_OPTIONS, Value = {}, Multi = true, AllowNone = true, Callback = function(Values)
 	eggEspFilter = {}
 	if type(Values) == "table" then
-		for k, _ in pairs(Values) do
-			eggEspFilter[tostring(k)] = true
+		for _, d in ipairs(Values) do
+			local cn = (type(d) == "table" and d.Title) or d
+			eggEspFilter[cn] = true
 		end
 	end
 	for egg, cached in pairs(eggEspCache) do
@@ -2579,9 +3024,8 @@ EspBox:AddDropdown("EggEspFilter", {
 		eggEspCache[egg] = nil
 	end
 	if eggEspEnabled then refreshEggEsp() end
-end)
-
-EspBox:AddToggle("EggEspToggle", { Text = "蛋透视", Default = false }):OnChanged(function(v)
+end })
+EspTab:Toggle({ Title = "蛋透视", Default = false, Callback = function(v)
 	eggEspEnabled = v
 	if v then
 		refreshEggEsp()
@@ -2591,16 +3035,33 @@ EspBox:AddToggle("EggEspToggle", { Text = "蛋透视", Default = false }):OnChan
 			eggEspCache[egg] = nil
 		end
 	end
-end)
+end })
 
-ThemeManager:SetLibrary(Library)
-SaveManager:SetLibrary(Library)
-SaveManager:IgnoreThemeSettings()
-SaveManager:SetIgnoreIndexes({ "MenuKeybind" })
-SaveManager:SetFolder("EggAuto/Configs")
-SaveManager:BuildConfigSection(Tabs["UI 设置"])
-ThemeManager:ApplyToTab(Tabs["UI 设置"])
-SaveManager:LoadAutoloadConfig()
+local UiTab = Tabs["UI 设置"]
+UiTab:Section({ Title = "配置", TextXAlignment = "Left", TextSize = 17 })
+UiTab:Paragraph({ Title = "自动保存", Desc = "配置随窗口 Folder 自动保存与加载" })
+task.spawn(function()
+	while true do
+		if autoInteractLink then
+			if not autoInteract then
+				autoInteract = true
+				startAutoInteract(LINK_INTERACT_INTERVAL)
+			end
+			if AutoInteractToggle and not AutoInteractToggle.Value then
+				pcall(function() AutoInteractToggle:Set(true) end)
+			end
+			autoInteractLinked = true
+		elseif autoInteractLinked then
+			autoInteract = false
+			stopAutoInteract()
+			if AutoInteractToggle and AutoInteractToggle.Value then
+				pcall(function() AutoInteractToggle:Set(false) end)
+			end
+			autoInteractLinked = false
+		end
+		task.wait(0.2)
+	end
+end)
 
 task.spawn(function()
 	while true do
