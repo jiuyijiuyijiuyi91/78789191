@@ -817,10 +817,46 @@ lockUtil.navWalk = function(targetPos, arriveDist, opts)
 	return result
 end
 
+lockUtil.pickToolName = function(n)
+	local s = string.lower(tostring(n))
+	return string.find(s, "pick", 1, true) ~= nil or string.find(tostring(n), "镐", 1, true) ~= nil or string.find(tostring(n), "稿", 1, true) ~= nil
+end
+lockUtil.findPickTool = function()
+	local char = player.Character
+	if not char then return nil, false end
+	for _, t in ipairs(char:GetChildren()) do
+		if t:IsA("Tool") and lockUtil.pickToolName(t.Name) then return t, true end
+	end
+	local bp = player:FindFirstChildOfClass("Backpack")
+	if bp then
+		for _, t in ipairs(bp:GetChildren()) do
+			if t:IsA("Tool") and lockUtil.pickToolName(t.Name) then return t, false end
+		end
+	end
+	return nil, false
+end
+lockUtil.ensurePickTool = function()
+	local tool, held = lockUtil.findPickTool()
+	if held then return true end
+	if not tool then return false end
+	local char = player.Character
+	local hum = char and char:FindFirstChildOfClass("Humanoid")
+	if not hum then return false end
+	pcall(function() hum:EquipTool(tool) end)
+	if tool.Parent ~= char then
+		pcall(function() tool.Parent = char end)
+	end
+	if tool.Parent == char then
+		task.wait(0.1)
+		return true
+	end
+	return false
+end
 lockUtil.tapSlot1Btn = nil
 lockUtil.tapSlot1Miss = 0
 lockUtil.tapSlot1Last = 0
 lockUtil.tapSlot1Button = function()
+	if lockUtil.ensurePickTool() then return end
 	local nowT = os.clock()
 	if nowT - lockUtil.tapSlot1Last < 0.15 then return end
 	lockUtil.tapSlot1Last = nowT
