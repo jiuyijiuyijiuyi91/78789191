@@ -51,9 +51,10 @@ local Toggles = Library.Toggles
 local Window = Library:CreateWindow({ Title = "骑宠物", Footer = "XJW", Center = true, AutoShow = true })
 
 local Tabs = {
-    Notice = Window:AddTab("公告", "user"),
-    Main = Window:AddTab("功能", "user"),
-    Farm = Window:AddTab("自动农场", "user"),
+    Notice = Window:AddTab("公告", "megaphone"),
+    Main = Window:AddTab("功能", "gamepad-2"),
+    Farm = Window:AddTab("自动农场", "wheat"),
+    Event = Window:AddTab("活动", "party-popper"),
     ["UI Settings"] = Window:AddTab("UI设置", "settings"),
 }
 
@@ -398,6 +399,15 @@ local EggAliases = {
     ["Black Dog"] = "Black Hole Egg",
     ["Dog"] = "Black Hole Egg",
 }
+local function IsQualityWordOnly(txt)
+    local probe = txt
+    for _, q in ipairs(QualityWords) do
+        probe = probe:gsub(q, "")
+    end
+    probe = probe:gsub("%s", ""):gsub("[%p]", "")
+    return probe == ""
+end
+
 local function OfficialFull(rawName)
 
     local key = NormalName(rawName)
@@ -424,7 +434,11 @@ local function OfficialFull(rawName)
         end
     end
 
-    return TranslateName(rawName) or "蛋"
+    local t = TranslateName(rawName)
+    if t and not IsQualityWordOnly(t) then
+        return t
+    end
+    return "蛋"
 end
 
 task.spawn(function()
@@ -588,6 +602,7 @@ local HatchedMarks = { "Hatched", "Claimed", "Collected", "Used", "Open", "Taken
 
 local function IsAliveEgg(obj)
     if not obj.Parent then return false end
+    local named = OfficialFull(obj.Name) ~= "蛋"
     local parts = {}
     local function walk(n)
         for _, c in ipairs(n:GetChildren()) do
@@ -603,19 +618,21 @@ local function IsAliveEgg(obj)
     end
     walk(obj)
     if #parts == 0 then return false end
-    local maxP, maxVol = nil, 0
-    for _, p in ipairs(parts) do
-        local v = p.Size.X * p.Size.Y * p.Size.Z
-        if v > maxVol then
-            maxVol = v
-            maxP = p
+    if not named then
+        local maxP, maxVol = nil, 0
+        for _, p in ipairs(parts) do
+            local v = p.Size.X * p.Size.Y * p.Size.Z
+            if v > maxVol then
+                maxVol = v
+                maxP = p
+            end
         end
-    end
-    if not maxP then return false end
-    if maxP.Transparency >= 0.3 then return false end
-    local mn = maxP.Name:lower()
-    if mn:find("base") or mn:find("pedestal") or mn:find("stand") or mn:find("platform") or mn:find("ground") or mn:find("ring") or mn:find("circle") or mn:find("holder") or mn:find("plate") or mn:find("decal") or mn:find("fx") or mn:find("effect") or mn:find("glow") or mn:find("spawn") or mn:find("decoration") or mn:find("truss") or mn:find("mesh") or mn:find("attachment") or mn:find("surface") or mn:find("light") or mn:find("pillar") or mn:find("column") or mn:find("floor") or mn:find("tile") then
-        return false
+        if not maxP then return false end
+        if maxP.Transparency >= 0.3 then return false end
+        local mn = maxP.Name:lower()
+        if mn:find("base") or mn:find("pedestal") or mn:find("stand") or mn:find("platform") or mn:find("ground") or mn:find("ring") or mn:find("circle") or mn:find("holder") or mn:find("plate") or mn:find("decal") or mn:find("fx") or mn:find("effect") or mn:find("glow") or mn:find("spawn") or mn:find("decoration") or mn:find("truss") or mn:find("mesh") or mn:find("attachment") or mn:find("surface") or mn:find("light") or mn:find("pillar") or mn:find("column") or mn:find("floor") or mn:find("tile") then
+            return false
+        end
     end
     local function hasMark(n)
         for _, c in ipairs(n:GetChildren()) do
@@ -721,7 +738,17 @@ local function EggTopPos(e)
     return e.Pos + Vector3.new(0, h, 0)
 end
 
-local function DropAndGoHome(hp)
+local WalkFly = nil
+
+local function EggLockSeconds(val)
+    if typeof(val) ~= "number" or val <= 1 then return 1 end
+    local s = 1 + 9 * (math.log10(val) / 12.4)
+    if s < 1 then s = 1 end
+    if s > 10 then s = 10 end
+    return s
+end
+
+local function DropAndGoHome(hp, lockVal)
     if typeof(hp) == "Instance" then
         hp = hp.Position
     end
@@ -741,15 +768,20 @@ local function DropAndGoHome(hp)
         dir = dir.Unit
     end
     local dp = hp + dir * 70
-    pcall(function()
-        TPTo(dp + Vector3.new(0, 1, 0))
-    end)
-    task.wait(0.3)
-    if BasketDrop then
-        pcall(function()
-            BasketDrop:FireServer()
-        end)
+    local dropTop = dp + Vector3.new(0, 2, 0)
+    WalkFly(dropTop, Options.FlySpeed.Value)
+    local lockSec = 0.2
+    if typeof(lockVal) == "number" and lockVal > 0 then
+        lockSec = EggLockSeconds(lockVal)
     end
+    local lockT0 = os.clock()
+    repeat
+        local rr = GetRoot()
+        if rr then
+            SetPos(rr, dropTop)
+        end
+        task.wait()
+    until os.clock() - lockT0 >= lockSec
     root = GetRoot()
     if root then
         pcall(function()
@@ -763,21 +795,29 @@ local function DropAndGoHome(hp)
             root.CFrame = CFrame.lookAt(root.Position, hp + Vector3.new(0, root.Position.Y, 0))
         end)
     end
-    local from = dp + Vector3.new(0, 1, 0)
-    local to = hp + Vector3.new(0, 1, 0)
-    local spd = 12
-    local dist = (to - from).Magnitude
-    local moved = 0
-    local last = os.clock()
-    while moved < 1 do
-        local now = os.clock()
-        local dt = now - last
-        last = now
-        moved = moved + spd * dt / dist
-        if moved > 1 then moved = 1 end
-        local r = GetRoot()
-        if r then
-            r.CFrame = CFrame.new(from:Lerp(to, moved))
+    local from = dropTop
+    local to = hp + Vector3.new(0, 2, 0)
+    local total = (to - from).Magnitude
+    if total > 0.1 then
+        local t0 = os.clock()
+        local k = 0
+        while k < 1 do
+            k = math.min(1, (os.clock() - t0) * 200 / total)
+            local r = GetRoot()
+            if r then
+                r.CFrame = CFrame.new(from:Lerp(to, k))
+            end
+            task.wait()
+        end
+    end
+    local rEnd = GetRoot()
+    if rEnd then
+        rEnd.CFrame = CFrame.new(to)
+    end
+    for _ = 1, 12 do
+        local rr = GetRoot()
+        if rr then
+            SetPos(rr, to)
         end
         task.wait()
     end
@@ -794,6 +834,45 @@ local function DropAndGoHome(hp)
 end
 local LastArrive = 0
 local GoHome = false
+local homePos = nil
+local homeBusy = false
+local MoveLock = { Owner = nil, Time = 0, Wait = {}, Prio = { pumpkin = 1, candy = 2, house = 3, yinyang = 4, dip = 5, tp2 = 6, hatch = 7 } }
+MoveLock.Hold = function(owner)
+    local now = os.clock()
+    MoveLock.Wait[owner] = now
+    if MoveLock.Owner and MoveLock.Owner ~= owner and now - MoveLock.Time < 30 then
+        return false
+    end
+    local mine = MoveLock.Prio[owner] or 99
+    for k, t in pairs(MoveLock.Wait) do
+        if k ~= owner and now - t <= 3 and (MoveLock.Prio[k] or 99) < mine then
+            return false
+        end
+    end
+    MoveLock.Owner = owner
+    MoveLock.Time = now
+    return true
+end
+MoveLock.Free = function(owner)
+    if MoveLock.Owner == owner then
+        MoveLock.Owner = nil
+    end
+end
+MoveLock.Keep = function(owner)
+    if MoveLock.Owner ~= owner then
+        return false
+    end
+    local now = os.clock()
+    local mine = MoveLock.Prio[owner] or 99
+    for k, t in pairs(MoveLock.Wait) do
+        if k ~= owner and now - t <= 3 and (MoveLock.Prio[k] or 99) < mine then
+            return false
+        end
+    end
+    MoveLock.Time = now
+    return true
+end
+local GetHomePos = nil
 local Flying = false
 local FlyBody = nil
 local FlyGyro = nil
@@ -871,6 +950,47 @@ local function SetNoclip(on)
         NoClipOrig = {}
     end
 end
+local function Unembed()
+    local root = GetRoot()
+    local ch = LP.Character
+    if not root or not ch then return end
+    local function insideSolid(pos)
+        local params = OverlapParams.new()
+        params.FilterType = Enum.RaycastFilterType.Exclude
+        params.FilterDescendantsInstances = {ch}
+        local hits = workspace:GetPartBoundsInBox(CFrame.new(pos), Vector3.new(1, 1, 1), params)
+        for _, p in pairs(hits) do
+            if p:IsA("BasePart") and p.CanCollide then
+                local lp = p.CFrame:PointToObjectSpace(pos)
+                if math.abs(lp.X) <= p.Size.X / 2 and math.abs(lp.Y) <= p.Size.Y / 2 and math.abs(lp.Z) <= p.Size.Z / 2 then
+                    return true
+                end
+            end
+        end
+        local ok, mats = pcall(function()
+            return workspace.Terrain:ReadVoxels(Region3.new(pos - Vector3.new(2, 2, 2), pos + Vector3.new(2, 2, 2)), 4)
+        end)
+        if ok and mats then
+            local m = mats[1][1][1]
+            if m ~= Enum.Material.Air and m ~= Enum.Material.Water then
+                return true
+            end
+        end
+        return false
+    end
+    if not insideSolid(root.Position) then return end
+    local p0 = root.Position
+    for i = 1, 15 do
+        local cand = p0 + Vector3.new(0, i * 4, 0)
+        if not insideSolid(cand) then
+            SetPos(root, cand)
+            print("[脱困] 卡墙，抬升 " .. tostring(i * 4) .. " 格脱困")
+            return
+        end
+    end
+    SetPos(root, p0 + Vector3.new(0, 60, 0))
+    print("[脱困] 卡墙，抬升 60 格脱困")
+end
 local function StopFly()
     Flying = false
     if FlyBody then
@@ -885,46 +1005,47 @@ local function StopFly()
         end)
         FlyGyro = nil
     end
+    Unembed()
     SetNoclip(false)
 end
-local function FlyTo(target, speed, isEgg, skipAutoTP, duration, force, sync)
-    if Flying then
-        if not force then return end
-        StopFly()
-    end
+WalkFly = function(target, speed, isStop)
     local root = GetRoot()
-    if not root then return end
-    Flying = true
+    if not root then return false end
     SetNoclip(true)
-    local startDist = (target - root.Position).Magnitude
-    local rate = duration and (startDist / duration) or speed
-    local function run()
-        while Flying and root and root.Parent do
-            if not skipAutoTP and not (Toggles.AutoTP and Toggles.AutoTP.Value) then
-                break
-            end
-            local diff = target - root.Position
-            local dist = diff.Magnitude
-            if dist < 5 then
-                if isEgg then
-                    LastArrive = os.clock()
-                end
-                GoHome = true
-                break
-            end
-            local step = math.min(rate * 0.03, dist)
-            local nxt = root.Position + diff.Unit * step
-            SetPos(root, nxt)
-            task.wait(0.03)
+    local spd = math.max(speed, 1)
+    local step = spd * 0.03
+    local t0 = os.clock()
+    local lastT = t0
+    local limit = (target - root.Position).Magnitude / math.max(step, 1) * 0.06 + 2
+    local last = root.Position
+    local stall = 0
+    while true do
+        if isStop and isStop() then break end
+        if os.clock() - t0 > limit then break end
+        root = GetRoot()
+        if not root then break end
+        local nowT = os.clock()
+        local dt = nowT - lastT
+        lastT = nowT
+        if dt < 0.01 then dt = 0.01 end
+        if dt > 0.1 then dt = 0.1 end
+        local move = spd * dt
+        local diff = target - root.Position
+        local dist = diff.Magnitude
+        if dist <= 1 then break end
+        if (root.Position - last).Magnitude < 0.05 then
+            stall = stall + 1
+            if stall >= 15 then break end
+        else
+            stall = 0
         end
-        StopFly()
+        last = root.Position
+        SetPos(root, root.Position + diff.Unit * math.min(move, dist))
+        task.wait(0.03)
     end
-    if sync then
-        run()
-    else
-        task.spawn(run)
-    end
+    return true
 end
+
 local function FindPromptPart(v)
     local p = v.Parent
     if not p then return nil end
@@ -1137,6 +1258,21 @@ local function ScanPlots()
     return list
 end
 
+GetHomePos = function()
+    local node = MyPlot
+    if not node then
+        pcall(ScanPlots)
+        node = MyPlot
+    end
+    if node then
+        local bp = node:IsA("BasePart") and node or node:FindFirstChild("Baseplate") or node:FindFirstChildWhichIsA("BasePart")
+        if bp and bp:IsA("BasePart") then
+            homePos = bp.Position
+            return homePos
+        end
+    end
+    return homePos
+end
 local EggNames = {}
 local EggObjs = {}
 local EggTypeMap = {}
@@ -1235,6 +1371,7 @@ end
 
 local function AddESP(obj)
     if ESPTags[obj] then return end
+    if not DisplayName(obj) then return end
     local tag = {}
     local hl = Instance.new("Highlight")
     hl.FillTransparency = 0.7
@@ -1375,14 +1512,167 @@ task.spawn(function()
         task.wait(5)
         pcall(function()
             local lines = {}
+            local det = {}
             for _, e in ipairs(CollectEggs()) do
-                lines[#lines + 1] = e.Obj.Name .. " -> " .. (OfficialFull(e.Obj.Name) or "?")
+                local disp = OfficialFull(e.Obj.Name)
+                lines[#lines + 1] = e.Obj.Name .. " -> " .. (disp or "?")
+                local rawT = TranslateName(e.Obj.Name)
+                if (not rawT or IsQualityWordOnly(rawT)) and #det < 30 then
+                    local o = e.Obj
+                    local attrs = {}
+                    pcall(function()
+                        for k, v in pairs(o:GetAttributes()) do
+                            attrs[#attrs + 1] = tostring(k) .. "=" .. tostring(v)
+                        end
+                    end)
+                    local kids = {}
+                    pcall(function()
+                        for _, c in ipairs(o:GetChildren()) do
+                            if c:IsA("ValueBase") then
+                                kids[#kids + 1] = c.ClassName .. ":" .. c.Name .. "=" .. tostring(c.Value)
+                            elseif not c:IsA("BasePart") then
+                                kids[#kids + 1] = c.ClassName .. ":" .. c.Name
+                            end
+                        end
+                    end)
+                    det[#det + 1] = o.Name .. "|" .. o.ClassName .. "|q=" .. tostring(GetQualityOf(o)) .. "|p=" .. tostring(o.Parent and o.Parent.Name) .. "|gp=" .. tostring(o.Parent and o.Parent.Parent and o.Parent.Parent.Name) .. "|attrs=" .. table.concat(attrs, ";") .. "|kids=" .. table.concat(kids, ",")
+                end
             end
             if #lines > 0 then
                 if makefolder and not isfolder("骑宠物") then
                     makefolder("骑宠物")
                 end
                 writefile("骑宠物/场上蛋名.txt", table.concat(lines, "\n"))
+            end
+            if #det > 0 then
+                if makefolder and not isfolder("骑宠物") then
+                    makefolder("骑宠物")
+                end
+                writefile("骑宠物/蛋详情.txt", table.concat(det, "\n"))
+            end
+        end)
+    end
+end)
+
+task.spawn(function()
+    local function Eggish(o, txt)
+        if not o then return false end
+        local n = o.Name:lower()
+        if n:find("egg") or n:find("black") or n:find("hole") or n:find("void") then
+            return true
+        end
+        local t = (txt or ""):lower()
+        if t:find("egg") or t:find("蛋") then
+            return true
+        end
+        return false
+    end
+    local function BiggestPart(root)
+        local best, bestVol = nil, 0
+        local function scan(n)
+            for _, c in ipairs(n:GetChildren()) do
+                if c:IsA("BasePart") then
+                    local vol = c.Size.X * c.Size.Y * c.Size.Z
+                    if vol > bestVol then
+                        bestVol = vol
+                        best = c
+                    end
+                elseif c:IsA("Model") or c:IsA("Folder") then
+                    scan(c)
+                end
+            end
+        end
+        scan(root)
+        return best
+    end
+    local function PathOf(o)
+        local out = {}
+        local n = o
+        for _ = 1, 8 do
+            if not n or n == workspace then
+                break
+            end
+            table.insert(out, 1, n.Name)
+            n = n.Parent
+        end
+        return table.concat(out, "/")
+    end
+    while true do
+        task.wait(5)
+        pcall(function()
+            local cp = GetCharPart()
+            if not cp then
+                return
+            end
+            local cpos = cp.Position
+            local plots = workspace:FindFirstChild("Plots")
+            local picked = {}
+            for _, e in ipairs(CollectEggs()) do
+                picked[e.Obj] = true
+            end
+            local lines = {}
+            local alerts = {}
+            for _, v in ipairs(workspace:GetDescendants()) do
+                local cls = v.ClassName
+                if (cls == "ProximityPrompt" or cls == "ClickDetector") and v.Parent then
+                    local part = FindPromptPart(v)
+                    if part and (part.Position - cpos).Magnitude <= 40 then
+                        local act = cls == "ProximityPrompt" and tostring(v.ActionText) or "click"
+                        local inPlot = plots ~= nil and part:IsDescendantOf(plots)
+                        local owner = nil
+                        local n = part
+                        while n do
+                            if picked[n] then
+                                owner = n
+                                break
+                            end
+                            n = n.Parent
+                        end
+                        local info = "P:" .. PathOf(part) .. "|D:" .. string.format("%.1f", (part.Position - cpos).Magnitude) .. "|act=" .. act .. "|obj=" .. tostring(v.ObjectText) .. "|tr=" .. tostring(part.Transparency) .. "|plot=" .. tostring(inPlot) .. "|collected=" .. tostring(owner ~= nil)
+                        if owner then
+                            info = info .. "|egg=" .. owner.Name
+                        end
+                        lines[#lines + 1] = info
+                        if not inPlot and not owner then
+                            local top = part
+                            for _ = 1, 4 do
+                                if top.Parent and top.Parent ~= workspace then
+                                    top = top.Parent
+                                else
+                                    break
+                                end
+                            end
+                            if InEggFolders(top) or Eggish(top, act) then
+                                local body = BiggestPart(top)
+                                local extra = "|top=" .. top.ClassName .. ":" .. top.Name .. "|alive=" .. tostring(IsAliveEgg(top)) .. "|fold=" .. tostring(InEggFolders(top))
+                                if body then
+                                    extra = extra .. "|body=" .. body.Name .. "|btr=" .. tostring(body.Transparency) .. "|size=" .. tostring(body.Size)
+                                end
+                                local kids = {}
+                                for _, c in ipairs(top:GetChildren()) do
+                                    if #kids < 10 then
+                                        kids[#kids + 1] = c.ClassName .. ":" .. c.Name
+                                    end
+                                end
+                                info = info .. extra .. "|kids=" .. table.concat(kids, ",")
+                                if #alerts < 3 then
+                                    alerts[#alerts + 1] = info
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+            if #lines > 0 then
+                pcall(function()
+                    if makefolder and not isfolder("骑宠物") then
+                        makefolder("骑宠物")
+                    end
+                    writefile("骑宠物/蛋诊断.txt", table.concat(lines, "\n"))
+                end)
+            end
+            for _, a in ipairs(alerts) do
+                print("[蛋诊断] " .. a)
             end
         end)
     end
@@ -1476,6 +1766,12 @@ task.spawn(function()
 end)
 
 local NoticeBox = Tabs.Notice:AddLeftGroupbox("公告")
+Toggles.NoticeRight = Tabs.Notice:AddRightGroupbox("公告")
+Toggles.NoticeRight:AddLabel("10月18日:已更新活动功能").TextLabel.TextColor3 = Color3.fromRGB(255, 0, 0)
+Toggles.NoticeRight:AddLabel("已修复黑洞蛋无法传送bug").TextLabel.TextColor3 = Color3.fromRGB(255, 0, 0)
+Toggles.NoticeRight:AddLabel("再次绕过反作弊").TextLabel.TextColor3 = Color3.fromRGB(255, 0, 0)
+Toggles.NoticeRight:AddLabel("已更新自动孵化蛋").TextLabel.TextColor3 = Color3.fromRGB(255, 0, 0)
+Toggles.NoticeRight:AddLabel("修复大量功能").TextLabel.TextColor3 = Color3.fromRGB(255, 0, 0)
 local NoticeLabel = NoticeBox:AddLabel("10月4日: 垃圾游戏已绕过距离检测反作弊")
 NoticeLabel.TextLabel.TextColor3 = Color3.fromRGB(255, 0, 0)
 local AutoBox = Tabs.Main:AddLeftGroupbox("自动化")
@@ -1499,8 +1795,7 @@ end
 local eggValues = UniqueEggFulls()
 local HangBox = Tabs.Farm:AddLeftGroupbox("挂机")
 Toggles.AutoPick = HangBox:AddToggle("AutoPick", { Text = "自动拾取", Default = false })
-Toggles.AutoTP = HangBox:AddToggle("AutoTP", { Text = "自动飞行蛋(2选1,开自动拾取)", Default = false })
-Toggles.AutoTP2 = HangBox:AddToggle("AutoTP2", { Text = "自动传送蛋(2选1,开自动拾取)", Default = false })
+Toggles.AutoTP2 = HangBox:AddToggle("AutoTP2", { Text = "自动传送蛋(开自动拾取)", Default = false })
 Options.FlySpeed = HangBox:AddSlider("FlySpeed", { Text = "飞行速度", Min = 1000, Max = 2000, Default = 1500, Rounding = 1 })
 Options.DelayTime = HangBox:AddSlider("DelayTime", { Text = "停留秒数", Min = 0.05, Max = 10, Default = 3, Rounding = 2 })
 Options.AutoEgg = HangBox:AddDropdown("AutoEgg", { Text = "选择蛋", Values = #eggValues > 0 and eggValues or { "无蛋" }, Default = 1, Multi = true })
@@ -1620,33 +1915,59 @@ local function VolcanoReturnHome()
     return false
 end
 local function VolcanoHold(pos, dur)
+    dur = tonumber(dur) or 0
+    if dur < 0 then dur = 0 end
+    local root = GetRoot()
+    if not root then return end
+    local rot = root.CFrame - root.CFrame.Position
     local t0 = os.clock()
-    while os.clock() - t0 < dur do
-        local root = GetRoot()
+    repeat
+        root = GetRoot()
         if root then
-            root.CFrame = CFrame.new(pos)
+            root.CFrame = CFrame.new(pos) * rot
             root.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+            root.AssemblyAngularVelocity = Vector3.new(0, 0, 0)
         end
-        task.wait(0.05)
+        task.wait()
+    until os.clock() - t0 >= dur
+end
+local function HoldPrompt(o, dur, noPin)
+    if not o or not o.Parent then return end
+    local hold = tonumber(dur) or 0
+    if hold <= 0 then hold = 0.5 end
+    if hold < 0.4 then hold = 0.4 end
+    if hold > 5 then hold = 5 end
+    local began = pcall(function()
+        o:InputHoldBegin()
+    end)
+    if began then
+        if noPin then
+            task.wait(hold)
+        else
+            local root = GetRoot()
+            local pos = root and root.Position or nil
+            VolcanoHold(pos, hold)
+        end
+        pcall(function()
+            o:InputHoldEnd()
+        end)
+    else
+        pcall(function()
+            fireproximityprompt(o, hold)
+        end)
     end
 end
 local function VolcanoFlyTo(target, speed, keepNoclip)
     local root = GetRoot()
     if not root then return end
     SetNoclip(true)
-    while true do
-        root = GetRoot()
-        if not root then break end
-        local diff = target - root.Position
-        local dist = diff.Magnitude
-        if dist < 1 then break end
-        local step = math.min(speed * 0.05, dist)
-        SetPos(root, root.Position + diff.Unit * step)
-        task.wait(0.05)
-    end
+    WalkFly(target, speed)
     root = GetRoot()
     if root then SetPos(root, target) end
-    if not keepNoclip then SetNoclip(false) end
+    if not keepNoclip then
+        Unembed()
+        SetNoclip(false)
+    end
 end
 VolcanoRunXD = function()
     local root = GetRoot()
@@ -1801,6 +2122,48 @@ EggBox:AddButton({ Text = "传送最高价值蛋", Func = function()
     TPTo(EggTopPos(e))
     LockToEgg(e)
 end })
+Toggles.AutoHatchEgg = EggBox:AddToggle("AutoHatchEgg", { Text = "自动孵化蛋", Default = false })
+task.spawn(function()
+    while true do
+        task.wait(0.8)
+        if Toggles.AutoHatchEgg and Toggles.AutoHatchEgg.Value then
+            ScanPlots()
+            local eggs = GetHomeEggs()
+            if #eggs > 0 and MoveLock.Hold("hatch") then
+                for _, e in ipairs(eggs) do
+                    if not (Toggles.AutoHatchEgg and Toggles.AutoHatchEgg.Value) then break end
+                    if not MoveLock.Keep("hatch") then break end
+                    local facePos = e.Pos + Vector3.new(0, -0.5, 0)
+                    pcall(function()
+                        TPTo(facePos)
+                    end)
+                    local ht0 = os.clock()
+                    while os.clock() - ht0 < 1.5 do
+                        local root = GetRoot()
+                        if not root then break end
+                        SetPos(root, facePos)
+                        if e.Obj and not e.Obj.Parent then break end
+                        task.wait(0.02)
+                    end
+                    local cp = GetCharPart()
+                    if cp then
+                        local cpos = cp.Position
+                        for _, v in ipairs(workspace:GetDescendants()) do
+                            if v.ClassName == "ProximityPrompt" and v.Parent then
+                                local part = FindPromptPart(v)
+                                if part and (part.Position - cpos).Magnitude <= 5 then
+                                    pcall(function() fireproximityprompt(v, v.HoldDuration) end)
+                                end
+                            end
+                        end
+                    end
+                    task.wait(1)
+                end
+                MoveLock.Free("hatch")
+            end
+        end
+    end
+end)
 
 local function MkVec(x, y, z)
     local ok, v = pcall(function()
@@ -1982,6 +2345,237 @@ local function OpenBackpack()
         task.wait(0.4)
     end
 end
+local PetUtil = {}
+PetUtil.RideId = "3373cbdc-44c4-424f-8e33-e321c454e3e7"
+PetUtil.Busy = false
+PetUtil.InvDone = false
+PetUtil.Pickup = GameR and GameR:FindFirstChild("PickupPet")
+PetUtil.Mount = GameR and GameR:FindFirstChild("Mounting")
+PetUtil.AttrHit = function(o, id)
+    local ok, at = pcall(function()
+        return o:GetAttributes()
+    end)
+    if ok and type(at) == "table" then
+        for _, v in pairs(at) do
+            if tostring(v) == id then
+                return true
+            end
+        end
+    end
+    return false
+end
+PetUtil.AttrList = function(o)
+    local out = {}
+    local ok, at = pcall(function()
+        return o:GetAttributes()
+    end)
+    if ok and type(at) == "table" then
+        for k, v in pairs(at) do
+            out[#out + 1] = tostring(k) .. "=" .. tostring(v)
+        end
+    end
+    return out
+end
+PetUtil.ValueList = function(o)
+    local out = {}
+    for _, d in ipairs(o:GetDescendants()) do
+        if d:IsA("ValueBase") then
+            out[#out + 1] = tostring(d.Name) .. "=" .. tostring(d.Value)
+        end
+    end
+    return out
+end
+PetUtil.Match = function(n, id)
+    if not n then return false end
+    if n.Name == id then return true end
+    if PetUtil.AttrHit(n, id) then return true end
+    for _, d in ipairs(n:GetDescendants()) do
+        if d:IsA("ValueBase") and tostring(d.Value) == id then
+            return true
+        end
+        if PetUtil.AttrHit(d, id) then
+            return true
+        end
+    end
+    return false
+end
+PetUtil.MyIds = function()
+    local out = {}
+    local pets = MyPlot and MyPlot:FindFirstChild("Pets")
+    if pets then
+        for _, q in ipairs(pets:GetChildren()) do
+            local v = GetPetId(q)
+            if v then
+                out[v] = true
+            end
+        end
+    end
+    return out
+end
+PetUtil.HomeId = function()
+    local id = PetUtil.RideId
+    local mine = PetUtil.MyIds()
+    if mine[id] then return id end
+    for v in pairs(mine) do
+        return v
+    end
+    return id
+end
+PetUtil.BagTools = function()
+    local out = {}
+    local bp = LP:FindFirstChild("Backpack")
+    if bp then
+        for _, t in ipairs(bp:GetChildren()) do
+            if t:IsA("Tool") then
+                out[#out + 1] = t
+            end
+        end
+    end
+    local ch = LP.Character
+    if ch then
+        for _, t in ipairs(ch:GetChildren()) do
+            if t:IsA("Tool") then
+                out[#out + 1] = t
+            end
+        end
+    end
+    return out
+end
+PetUtil.ToolText = function(t)
+    local att = PetUtil.AttrList(t)
+    local vals = PetUtil.ValueList(t)
+    local s = t.ClassName .. ":" .. tostring(t.Name) .. " 位置=" .. tostring(t.Parent and t.Parent.Name)
+    if #att > 0 then
+        s = s .. " 属性[" .. table.concat(att, ",") .. "]"
+    end
+    if #vals > 0 then
+        s = s .. " 值[" .. table.concat(vals, ",") .. "]"
+    end
+    return s
+end
+PetUtil.SlotText = function(s)
+    local extra = ""
+    pcall(function()
+        if s:IsA("ImageLabel") or s:IsA("ImageButton") then
+            extra = " 图=" .. tostring(s.Image)
+        end
+        if s:IsA("TextLabel") or s:IsA("TextButton") then
+            extra = " 文=" .. tostring(s.Text)
+        end
+    end)
+    local att = PetUtil.AttrList(s)
+    local vals = PetUtil.ValueList(s)
+    local r = s.ClassName .. ":" .. tostring(s.Name) .. extra
+    if #att > 0 then
+        r = r .. " 属性[" .. table.concat(att, ",") .. "]"
+    end
+    if #vals > 0 then
+        r = r .. " 值[" .. table.concat(vals, ",") .. "]"
+    end
+    return r
+end
+PetUtil.InvBrief = function()
+    local tools = PetUtil.BagTools()
+    print("[背包] LocalPlayer.Backpack Tool数=" .. tostring(#tools))
+    for i = 1, math.min(#tools, 20) do
+        print("[背包] " .. tostring(i) .. " " .. PetUtil.ToolText(tools[i]))
+    end
+    local hs = GetHotbarSlots()
+    for i = 1, math.min(#hs, 10) do
+        print("[格子] 快捷" .. tostring(i) .. " " .. PetUtil.SlotText(hs[i]))
+    end
+    local iv = GetInvSlots()
+    print("[格子] 背包格数=" .. tostring(#iv))
+    for i = 1, math.min(#iv, 20) do
+        print("[格子] 背包" .. tostring(i) .. " " .. PetUtil.SlotText(iv[i]))
+    end
+end
+PetUtil.FindTarget = function(id)
+    local tools = PetUtil.BagTools()
+    local tool = nil
+    for _, t in ipairs(tools) do
+        if PetUtil.Match(t, id) then
+            tool = t
+            break
+        end
+    end
+    if not tool and #tools == 1 then
+        tool = tools[1]
+    end
+    if not tool then
+        for _, t in ipairs(tools) do
+            local n = string.lower(tostring(t.Name))
+            if string.find(n, "pet") or string.find(tostring(t.Name), "宠") then
+                tool = t
+                break
+            end
+        end
+    end
+    local slot = nil
+    for _, s in ipairs(GetHotbarSlots()) do
+        if PetUtil.Match(s, id) or (tool and s.Name == tool.Name) then
+            slot = s
+            break
+        end
+    end
+    if not slot then
+        for _, s in ipairs(GetInvSlots()) do
+            if PetUtil.Match(s, id) or (tool and s.Name == tool.Name) then
+                slot = s
+                break
+            end
+        end
+    end
+    return slot, tool
+end
+PetUtil.Prepare = function()
+    if PetUtil.Busy then
+        local tw = os.clock()
+        while PetUtil.Busy and os.clock() - tw < 1.5 do
+            task.wait(0.05)
+        end
+        if PetUtil.Busy then
+            return false
+        end
+    end
+    if not (PetUtil.Pickup and PetUtil.Mount) then
+        print("[拿蛋] 缺远程 PickupPet/Mounting")
+        return false
+    end
+    PetUtil.Busy = true
+    local id = PetUtil.HomeId()
+    pcall(function()
+        PetUtil.Pickup:FireServer(id)
+    end)
+    task.wait(0.4)
+    OpenBackpack()
+    task.wait(0.2)
+    if not PetUtil.InvDone then
+        PetUtil.InvDone = true
+        PetUtil.InvBrief()
+    end
+    local slot, tool = PetUtil.FindTarget(id)
+    if slot then
+        ClickSlot(slot)
+        task.wait(0.3)
+    elseif tool then
+        pcall(function()
+            local h = LP.Character and LP.Character:FindFirstChildWhichIsA("Humanoid")
+            if h then
+                h:EquipTool(tool)
+            end
+        end)
+        task.wait(0.3)
+    end
+    pcall(function()
+        PetUtil.Mount:FireServer()
+    end)
+    task.wait(0.4)
+    print("[拿蛋] 卸下+装备 id=" .. tostring(id) .. " 格子=" .. (slot and tostring(slot.Name) or "无") .. " Tool=" .. (tool and tostring(tool.Name) or "无"))
+    PetUtil.Busy = false
+    return true
+end
+
 local UIS = game:GetService("UserInputService")
 local probeCount = {}
 local probeConn = nil
@@ -2382,30 +2976,135 @@ local function SlotIsEgg(slot)
     return false
 end
 local function PointLoopOnce()
-    OpenBackpack()
-    task.wait(0.4)
     local ep = GetEggPlaced()
-    local hs = GetHotbarSlots()
-    local iv = GetInvSlots()
+    if not ep then return end
+    local function IsEggTool(o)
+        if not o:IsA("Tool") then return false end
+        local nm = tostring(o.Name)
+        if nm:find("蛋", 1, true) then return true end
+        local k = NormalName(nm)
+        if k == "" then return false end
+        if EggValue[k] then return true end
+        if k:find("egg", 1, true) then return true end
+        for _, n in ipairs(AllEggNames) do
+            local an = NormalName(n)
+            if an ~= "" and k:find(an, 1, true) then return true end
+        end
+        return false
+    end
+    local function ToolUuid(o)
+        local found = nil
+        local function chk(v)
+            if found then return end
+            if type(v) == "string" and v:match("^%x%x%x%x%x%x%x%x%-%x%x%x%x%-") then
+                found = v
+            end
+        end
+        pcall(function()
+            for _, v in pairs(o:GetAttributes()) do
+                chk(tostring(v))
+            end
+        end)
+        chk(tostring(o.Name))
+        for _, d in ipairs(o:GetDescendants()) do
+            chk(tostring(d.Name))
+            pcall(function()
+                for _, v in pairs(d:GetAttributes()) do
+                    chk(tostring(v))
+                end
+            end)
+            pcall(function()
+                if d:IsA("ValueBase") then
+                    chk(tostring(d.Value))
+                end
+            end)
+        end
+        return found
+    end
+    local function TakeEgg(o, uuid)
+        if uuid and grabSeen and grabSeen.obj then
+            local args = {}
+            local n = select("#", unpack(grabSeen.args))
+            for i = 1, n do
+                args[i] = select(i, unpack(grabSeen.args))
+            end
+            if n >= 1 then args[1] = uuid end
+            local ok = pcall(function()
+                grabSeen.obj:FireServer(unpack(args))
+            end)
+            if ok then return true end
+        end
+        local ch = LP.Character
+        if not ch then return false end
+        local hum = ch:FindFirstChildOfClass("Humanoid")
+        if hum then
+            pcall(function()
+                hum:EquipTool(o)
+            end)
+        end
+        if o.Parent ~= ch then
+            pcall(function()
+                o.Parent = ch
+            end)
+        end
+        return o.Parent == ch
+    end
     local function SpamPlant()
-        if not ep then return end
         local pos = RandomPlotPos()
         local args = { [1] = { ["PlantPosition"] = pos } }
         pcall(function()
             ep:FireServer(unpack(args))
         end)
     end
-    for i, slot in ipairs(hs) do
-        if not (Toggles.PointClick and Toggles.PointClick.Value) then break end
-        QuietClick(slot)
-        for _ = 1, 8 do SpamPlant() end
-        task.wait(0.15)
+    local bp = LP:FindFirstChild("Backpack")
+    if not bp then return end
+    local eggs = {}
+    for _, o in ipairs(bp:GetChildren()) do
+        if IsEggTool(o) then
+            local v = GetEggValue(o.Name)
+            if type(v) ~= "number" then v = 0 end
+            eggs[#eggs + 1] = { Obj = o, Val = v }
+        end
     end
-    for i, slot in ipairs(iv) do
+    if #eggs == 0 then
+        if not PetUtil.PlantDump then
+            PetUtil.PlantDump = true
+            local lines = {}
+            for _, o in ipairs(bp:GetChildren()) do
+                lines[#lines + 1] = o.ClassName .. ":" .. tostring(o.Name)
+                pcall(function()
+                    for k, v in pairs(o:GetAttributes()) do
+                        lines[#lines + 1] = "  A:" .. tostring(k) .. "=" .. tostring(v)
+                    end
+                end)
+                pcall(function()
+                    for _, d in ipairs(o:GetChildren()) do
+                        lines[#lines + 1] = "  C:" .. d.ClassName .. ":" .. tostring(d.Name)
+                    end
+                end)
+            end
+            pcall(function()
+                if makefolder and not isfolder("骑宠物") then makefolder("骑宠物") end
+                writefile("骑宠物/背包清单.txt", table.concat(lines, "\n"))
+            end)
+        end
+        return
+    end
+    table.sort(eggs, function(a, b)
+        if a.Val == b.Val then
+            return tostring(a.Obj.Name) < tostring(b.Obj.Name)
+        end
+        return a.Val > b.Val
+    end)
+    for _, item in ipairs(eggs) do
         if not (Toggles.PointClick and Toggles.PointClick.Value) then break end
-        QuietClick(slot)
-        for _ = 1, 8 do SpamPlant() end
-        task.wait(0.15)
+        local o = item.Obj
+        if o.Parent == bp then
+            TakeEgg(o, ToolUuid(o))
+            task.wait(0.35)
+            for _ = 1, 8 do SpamPlant() end
+            task.wait(0.25)
+        end
     end
 end
 task.spawn(function()
@@ -2426,6 +3125,614 @@ task.spawn(function()
 end)
 
 Toggles.PointClick = EggBox:AddToggle("PointClick", { Text = "自动放蛋(首先你的物品栏和背包得要有蛋)", Default = false })
+
+Toggles.EggBox = Tabs.Event:AddLeftGroupbox("万圣节")
+Toggles.BuyHalloweenEgg = Toggles.EggBox:AddToggle("BuyHalloweenEgg", { Text = "自动购买万圣节蛋", Default = false })
+Toggles.EggBox:AddButton({ Text = "传送AFK区域", Func = function()
+    local fn = workspace:FindFirstChild("Functionals")
+    local afk = fn and fn:FindFirstChild("HalloweenAFK")
+    if afk then
+        local part = afk:IsA("BasePart") and afk or afk:FindFirstChildWhichIsA("BasePart")
+        if part then
+            pcall(function()
+                TPTo(part.Position + Vector3.new(0, 1, 0))
+            end)
+        end
+    end
+end })
+
+Toggles.CandyBox = Tabs.Event:AddLeftGroupbox("糖果")
+Toggles.CandyPick = Toggles.CandyBox:AddToggle("CandyPick", { Text = "自动拾取", Default = false })
+Toggles.HouseKnock = Toggles.CandyBox:AddToggle("HouseKnock", { Text = "自动敲门(开自动拾取)", Default = false })
+Toggles.Candy = Toggles.CandyBox:AddToggle("Candy", { Text = "自动收集糖果(开自动拾取)", Default = false })
+PetUtil.CandyValue = function(c)
+    local function Grab(x)
+        if type(x) == "number" then
+            if x > 0 then return x end
+            return nil
+        end
+        if type(x) == "string" then
+            local n = tonumber(x:match("%d+"))
+            if n and n > 0 then return n end
+        end
+        return nil
+    end
+    for _, k in ipairs({ "Value", "EggValue", "Worth", "Price", "Tokens", "Token", "Amount", "CandyValue", "Reward", "Points" }) do
+        local ok, av = pcall(function() return c:GetAttribute(k) end)
+        if ok then
+            local n = Grab(av)
+            if n then return n end
+        end
+    end
+    local okd, kids = pcall(function() return c:GetDescendants() end)
+    if okd and kids then
+        for _, d in ipairs(kids) do
+            if d:IsA("NumberValue") or d:IsA("IntValue") or d:IsA("StringValue") then
+                local n = Grab(d.Value)
+                if n then return n end
+            end
+        end
+        for _, d in ipairs(kids) do
+            local dn = tostring(d.Name):lower()
+            if dn:find("value") or dn:find("token") or dn:find("worth") or dn:find("price") or dn:find("amount") then
+                local n = Grab(d.Name)
+                if n then return n end
+            end
+        end
+    end
+    local g = GetEggValue(c.Name)
+    if g and g > 0 then return g end
+    local n = Grab(c.Name)
+    if n then return n end
+    return 0
+end
+PetUtil.CandyWait = function(c)
+    local val = PetUtil.CandyValue(c)
+    if val <= 1 then
+        return 2
+    end
+    local r = math.log10(val) / 9
+    if r < 0 then r = 0 end
+    if r > 1 then r = 1 end
+    local sec = 1 + 4 * r
+    if sec < 2 then sec = 2 end
+    if sec > 5 then sec = 5 end
+    return sec
+end
+PetUtil.PartPos = function(o)
+    if not o then return nil end
+    if o:IsA("BasePart") then return o.Position end
+    local p = o.PrimaryPart
+    if not p then
+        p = o:FindFirstChildWhichIsA("BasePart")
+    end
+    return p and p.Position or nil
+end
+PetUtil.DropPos = function(first, second)
+    for _, n in ipairs({ first, second, "CandyDropOff", "PumpkinDropOff", "HalloweenDropOff", "DropOff" }) do
+        if n then
+            local o = workspace:FindFirstChild(n)
+            local p = PetUtil.PartPos(o)
+            if p then return p, n end
+        end
+    end
+    for _, o in ipairs(workspace:GetChildren()) do
+        local ln = o.Name:lower()
+        if ln:find("dropoff") or ln:find("sell") then
+            local p = PetUtil.PartPos(o)
+            if p then return p, o.Name end
+        end
+    end
+    return nil, nil
+end
+PetUtil.IsRitual = function(nm)
+    if not nm then return false end
+    local low = nm:lower()
+    if low:find("headless") or low:find("ritual") or low:find("cutout") or low:find("socket") then return true end
+    if nm:find("阴") or nm:find("阳") then return true end
+    if low:find("yang") then return true end
+    if low:find("yin") and not low:find("play") and not low:find("fly") then return true end
+    return false
+end
+Toggles.RitualBox = Tabs.Event:AddLeftGroupbox("阴阳")
+Toggles.YinYang = Toggles.RitualBox:AddToggle("YinYang", { Text = "自动收集阴阳(开自动拾取)", Default = false })
+Toggles.PumpkinBox = Tabs.Event:AddLeftGroupbox("南瓜")
+Toggles.Pumpkin = Toggles.PumpkinBox:AddToggle("Pumpkin", { Text = "自动收集腐烂南瓜(开自动拾取)", Default = false })
+task.spawn(function()
+    local ready = false
+    while true do
+        task.wait(0.5)
+        if Toggles.Candy and Toggles.Candy.Value then
+            if not ready then
+                ready = true
+                TPTo(Vector3.new(-46032.695312, 40388.906250, -20314.591797))
+                task.wait(1)
+                PetUtil.Prepare()
+            end
+            local folder = workspace:FindFirstChild("HalloweenCandy")
+            local drop = workspace:FindFirstChild("CandyDropOff")
+            local dropPos = nil
+            if drop then
+                if drop:IsA("BasePart") then
+                    dropPos = drop.Position
+                else
+                    local dp = drop.PrimaryPart or drop:FindFirstChildWhichIsA("BasePart")
+                    if dp then
+                        dropPos = dp.Position
+                    end
+                end
+            end
+            if folder then
+                local candyList = {}
+                for _, c in ipairs(folder:GetChildren()) do
+                    local cp = nil
+                    if c:IsA("BasePart") then
+                        cp = c.Position
+                    else
+                        local p = c.PrimaryPart or c:FindFirstChildWhichIsA("BasePart")
+                        if p then
+                            cp = p.Position
+                        end
+                    end
+                    if cp then
+                        table.insert(candyList, { Obj = c, Pos = cp, Val = PetUtil.CandyValue(c) })
+                    end
+                end
+                table.sort(candyList, function(a, b)
+                    return a.Val > b.Val
+                end)
+                if #candyList > 0 and MoveLock.Hold("candy") then
+                    for _, it in ipairs(candyList) do
+                        if not (Toggles.Candy and Toggles.Candy.Value) then break end
+                        if not MoveLock.Keep("candy") then break end
+                        WalkFly(it.Pos + Vector3.new(0, 3, 0), Options.FlySpeed.Value)
+                        local cw = PetUtil.CandyWait(it.Obj)
+                        print("[糖果] 到 " .. tostring(it.Obj.Name) .. " 价值=" .. tostring(it.Val) .. " 停留=" .. string.format("%.2f", cw) .. "秒")
+                        task.wait(cw)
+                        if dropPos then
+                            WalkFly(dropPos + Vector3.new(0, 3, 0), Options.FlySpeed.Value)
+                            task.wait(0.5)
+                        end
+                    end
+                    MoveLock.Free("candy")
+                end
+            end
+        else
+            ready = false
+            MoveLock.Free("candy")
+        end
+    end
+end)
+
+task.spawn(function()
+    local function PartOf(o)
+        if not o then return nil end
+        if o:IsA("BasePart") then return o end
+        return o:FindFirstChildWhichIsA("BasePart", true)
+    end
+    local function Match(o, tag)
+        if not o then return false end
+        local nm = o.Name
+        local ln = nm:lower()
+        if tag == "yang" then
+            return ln:find("yang") ~= nil or nm:find("阳") ~= nil
+        end
+        return (ln:find("yin") ~= nil and ln:find("play") == nil and ln:find("fly") == nil) or nm:find("阴") ~= nil
+    end
+    local function Find(list, tag)
+        for _, c in ipairs(list) do
+            local p = PartOf(c)
+            if p and Match(c, tag) then
+                return { Obj = c, Pos = p.Position }
+            end
+        end
+        return nil
+    end
+    local lastMsg = ""
+    local function Say(msg)
+        if msg ~= lastMsg then
+            lastMsg = msg
+            if msg ~= "" then
+                print(msg)
+            end
+        end
+    end
+    local ready = false
+    while true do
+        task.wait(0.5)
+        if Toggles.YinYang and Toggles.YinYang.Value then
+            local ritual = workspace:FindFirstChild("HeadlessRitual")
+            local runtime = ritual and ritual:FindFirstChild("Runtime")
+            local sockets = ritual and ritual:FindFirstChild("SocketRecesses")
+            local list = {}
+            local src = runtime or ritual
+            if src then
+                for _, c in ipairs(src:GetDescendants()) do
+                    table.insert(list, c)
+                end
+                if src ~= runtime then
+                    table.insert(list, src)
+                end
+            end
+            local skList = {}
+            if sockets then
+                for _, c in ipairs(sockets:GetDescendants()) do
+                    table.insert(skList, c)
+                end
+            end
+            local yang = Find(list, "yang")
+            local yin = Find(list, "yin")
+            local yCut = Find(skList, "yang")
+            local yinCut = Find(skList, "yin")
+            if not ritual then
+                Say("[阴阳] 找不到 workspace.HeadlessRitual")
+            elseif not yang and not yin then
+                local names = {}
+                for idx = 1, math.min(#list, 8) do
+                    table.insert(names, list[idx].Name)
+                end
+                Say("[阴阳] 没找到阴/阳 " .. tostring(src and src:GetFullName() or "nil") .. " 对象 " .. tostring(#list) .. " 个: " .. table.concat(names, ", "))
+            elseif not MoveLock.Hold("yinyang") then
+                Say("[阴阳] 移动锁被占用 占用者 " .. tostring(MoveLock.Owner))
+            else
+                Say("")
+                if not ready then
+                    ready = true
+                    TPTo(Vector3.new(-46032.695312, 40388.906250, -20314.591797))
+                    task.wait(1)
+                    PetUtil.Prepare()
+                end
+                local stops = {}
+                if yang then
+                    table.insert(stops, { Tag = "阳", Pos = yang.Pos, Obj = yang.Obj })
+                end
+                if yCut then
+                    table.insert(stops, { Tag = "YangCutout", Pos = yCut.Pos, Obj = yCut.Obj })
+                end
+                if yin then
+                    table.insert(stops, { Tag = "阴", Pos = yin.Pos, Obj = yin.Obj })
+                end
+                if yinCut then
+                    table.insert(stops, { Tag = "YinCutout", Pos = yinCut.Pos, Obj = yinCut.Obj })
+                end
+                for _, st in ipairs(stops) do
+                    if not MoveLock.Keep("yinyang") then
+                        break
+                    end
+                    print("[阴阳] 飞向 " .. st.Tag .. " " .. tostring(st.Obj.Name))
+                    WalkFly(st.Pos + Vector3.new(0, 3, 0), 3000)
+                    VolcanoHold(st.Pos + Vector3.new(0, 3, 0), 1)
+                end
+                MoveLock.Free("yinyang")
+            end
+        else
+            ready = false
+            lastMsg = ""
+        end
+    end
+end)
+
+task.spawn(function()
+    local doorFire = {}
+    local ritualFire = {}
+    while true do
+        task.wait(0.1)
+        if Toggles.CandyPick and Toggles.CandyPick.Value then
+            local cp = GetCharPart()
+            if cp then
+                local cpos = cp.Position
+                local now = os.clock()
+                for _, v in ipairs(workspace:GetDescendants()) do
+                    if v.ClassName == "ProximityPrompt" and v.Parent then
+                        local part = FindPromptPart(v)
+                        if part and (part.Position - cpos).Magnitude <= 20 then
+                            local n = part
+                            local isEventItem = false
+                            local isDoor = false
+                            local isRitual = false
+                            while n and n ~= workspace do
+                                local ln = n.Name:lower()
+                                if ln:find("candy") or ln:find("pumpkin") or ln:find("rotten") then
+                                    isEventItem = true
+                                    break
+                                end
+                                if PetUtil.IsRitual(n.Name) then
+                                    isRitual = true
+                                    break
+                                end
+                                if ln:find("door") or ln:find("house") or ln:find("knock") or ln:find("treat") or ln:find("trick") then
+                                    isDoor = true
+                                end
+                                n = n.Parent
+                            end
+                            if isEventItem then
+                                pcall(function()
+                                    fireproximityprompt(v, v.HoldDuration)
+                                end)
+                            elseif isRitual and (not ritualFire[v] or now - ritualFire[v] > 3) then
+                                ritualFire[v] = now
+                                pcall(function()
+                                    fireproximityprompt(v, v.HoldDuration)
+                                end)
+                            elseif isDoor and (not doorFire[v] or now - doorFire[v] > 4) then
+                                doorFire[v] = now
+                                if not (Toggles.HouseKnock and Toggles.HouseKnock.Value) then
+                                    local hv = tonumber(v.HoldDuration) or 0
+                                    HoldPrompt(v, hv, true)
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+end)
+
+task.spawn(function()
+    local doors, stamp, cd = {}, 0, {}
+    local ready = false
+    while true do
+        task.wait(0.5)
+        if Toggles.HouseKnock and Toggles.HouseKnock.Value then
+            if not ready then
+                ready = true
+                TPTo(Vector3.new(-46032.695312, 40388.906250, -20314.591797))
+                task.wait(1)
+                PetUtil.Prepare()
+            end
+            local now = os.clock()
+            if now - stamp > 30 then
+                stamp = now
+                doors = {}
+                local folder = workspace:FindFirstChild("TrickOrTreatHouseModel")
+                local houses = {}
+                if folder then
+                    local kids = folder:GetChildren()
+                    if #kids > 0 then
+                        for _, h in ipairs(kids) do
+                            table.insert(houses, h)
+                        end
+                    else
+                        table.insert(houses, folder)
+                    end
+                end
+                for _, h in ipairs(houses) do
+                    local obj = nil
+                    local objs = {}
+                    for _, x in ipairs(h:GetDescendants()) do
+                        if x.ClassName == "ProximityPrompt" or x.ClassName == "ClickDetector" then
+                            table.insert(objs, x)
+                            if not obj then
+                                obj = x
+                            end
+                        end
+                    end
+                    local part = nil
+                    if obj and obj.ClassName == "ProximityPrompt" then
+                        part = FindPromptPart(obj)
+                    end
+                    if not part then
+                        local par = obj and obj.Parent or nil
+                        if par then
+                            if par:IsA("BasePart") then
+                                part = par
+                            else
+                                part = par:FindFirstChildWhichIsA("BasePart")
+                            end
+                        end
+                    end
+                    if not part then
+                        for _, x in ipairs(h:GetDescendants()) do
+                            if x:IsA("BasePart") and x.Name:lower():find("door") then
+                                part = x
+                                break
+                            end
+                        end
+                    end
+                    if not part then
+                        part = h:IsA("BasePart") and h or h:FindFirstChildWhichIsA("BasePart")
+                    end
+                    if obj and part then
+                        table.insert(doors, { Obj = obj, Objs = objs, P = part, H = h })
+                    end
+                end
+                if #doors == 0 then
+                    for _, v in ipairs(workspace:GetDescendants()) do
+                        if (v.ClassName == "ProximityPrompt" or v.ClassName == "ClickDetector") and v.Parent then
+                            local n = v
+                            local hit = false
+                            while n and n ~= workspace do
+                                local ln = n.Name:lower()
+                                if ln:find("door") or ln:find("house") or ln:find("knock") or ln:find("treat") or ln:find("trick") then
+                                    hit = true
+                                    break
+                                end
+                                n = n.Parent
+                            end
+                            if hit then
+                                local part = nil
+                                if v.ClassName == "ProximityPrompt" then
+                                    part = FindPromptPart(v)
+                                end
+                                if not part then
+                                    local par = v.Parent
+                                    if par and par:IsA("BasePart") then
+                                        part = par
+                                    elseif par then
+                                        part = par:FindFirstChildWhichIsA("BasePart")
+                                    end
+                                end
+                                if part then
+                                    table.insert(doors, { Obj = v, Objs = { v }, P = part, H = v.Parent })
+                                end
+                            end
+                        end
+                    end
+                end
+                print("[敲门] TrickOrTreatHouseModel 房子 " .. tostring(#houses) .. " 个，可敲 " .. tostring(#doors) .. " 个")
+            end
+            if #doors > 0 and MoveLock.Hold("house") then
+                local cp = GetCharPart()
+                if not cp then
+                    MoveLock.Free("house")
+                else
+                    local cpos = cp.Position
+                    table.sort(doors, function(a, b)
+                        return (a.P.Position - cpos).Magnitude < (b.P.Position - cpos).Magnitude
+                    end)
+                    for _, d in ipairs(doors) do
+                        if not (Toggles.HouseKnock and Toggles.HouseKnock.Value) then
+                            break
+                        end
+                        if not MoveLock.Keep("house") then
+                            break
+                        end
+                        if d.P.Parent and d.Obj.Parent and (cd[d.P] or 0) <= os.clock() then
+                            local name = tostring(d.H and d.H.Name or d.P.Name)
+                            local cp2 = GetCharPart()
+                            local hd = 0
+                            if cp2 then
+                                hd = (d.P.Position - cp2.Position).Magnitude
+                            end
+                            print("[敲门] 飞向 " .. name .. " 距离 " .. string.format("%.0f", hd))
+                            WalkFly(d.P.Position + Vector3.new(0, 3, 0), Options.FlySpeed.Value > 3000 and Options.FlySpeed.Value or 3000)
+                            for _, o in ipairs(d.Objs or { d.Obj }) do
+                                if o.Parent then
+                                    if o.ClassName == "ProximityPrompt" then
+                                        local hd2 = tonumber(o.HoldDuration) or 0
+                                        if hd2 <= 0 then hd2 = 0.5 end
+                                        print("[敲门] 长按 " .. name .. " " .. string.format("%.2f", hd2) .. "秒")
+                                        HoldPrompt(o, hd2)
+                                    elseif o.ClassName == "ClickDetector" then
+                                        pcall(function()
+                                            fireclickdetector(o)
+                                        end)
+                                    end
+                                end
+                            end
+                            cd[d.P] = os.clock() + 20
+                            print("[敲门] 已敲 " .. name)
+                            if d.P.Parent then
+                                VolcanoHold(d.P.Position + Vector3.new(0, 3, 0), 1)
+                            end
+                            local dropPos, dropName = PetUtil.DropPos("CandyDropOff", "PumpkinDropOff")
+                            if dropPos then
+                                print("[敲门] 飞向出售区 " .. tostring(dropName))
+                                WalkFly(dropPos + Vector3.new(0, 3, 0), Options.FlySpeed.Value > 3000 and Options.FlySpeed.Value or 3000)
+                                VolcanoHold(dropPos + Vector3.new(0, 3, 0), 0.5)
+                                Unembed()
+                                SetNoclip(false)
+                            end
+                        end
+                    end
+                    do
+                        local anyAvail = false
+                        for _, d in ipairs(doors) do
+                            if d.P.Parent and d.Obj.Parent and (cd[d.P] or 0) <= os.clock() then
+                                anyAvail = true
+                                break
+                            end
+                        end
+                        local cp3 = GetCharPart()
+                        if not anyAvail and cp3 then
+                            local nd, np = nil, math.huge
+                            for _, d in ipairs(doors) do
+                                if d.P.Parent then
+                                    local dist = (d.P.Position + Vector3.new(0, 3, 0) - cp3.Position).Magnitude
+                                    if dist < np then
+                                        np = dist
+                                        nd = d
+                                    end
+                                end
+                            end
+                            if nd and np > 15 then
+                                print("[敲门] 门都在冷却，回最近门口等 " .. string.format("%.0f", np))
+                                WalkFly(nd.P.Position + Vector3.new(0, 3, 0), Options.FlySpeed.Value > 3000 and Options.FlySpeed.Value or 3000)
+                                Unembed()
+                                SetNoclip(false)
+                            end
+                        end
+                    end
+                    MoveLock.Free("house")
+                end
+            end
+        else
+            ready = false
+        end
+    end
+end)
+
+task.spawn(function()
+    local ready = false
+    while true do
+        task.wait(0.5)
+        if Toggles.Pumpkin and Toggles.Pumpkin.Value then
+            if not ready then
+                ready = true
+                TPTo(Vector3.new(-46032.695312, 40388.906250, -20314.591797))
+                task.wait(1)
+                PetUtil.Prepare()
+            end
+            local folder = workspace:FindFirstChild("HalloweenPumpkins")
+            local dropPos, dropName = PetUtil.DropPos("PumpkinDropOff", "CandyDropOff")
+            if folder then
+                local root = GetRoot()
+                local list = {}
+                for _, c in ipairs(folder:GetChildren()) do
+                    local cp = PetUtil.PartPos(c)
+                    if cp then
+                        local d = root and (cp - root.Position).Magnitude or 0
+                        table.insert(list, { Obj = c, Pos = cp, Dist = d })
+                    end
+                end
+                table.sort(list, function(a, b)
+                    return a.Dist < b.Dist
+                end)
+                if #list > 0 and MoveLock.Hold("pumpkin") then
+                    for _, it in ipairs(list) do
+                        if not (Toggles.Pumpkin and Toggles.Pumpkin.Value) then break end
+                        if not MoveLock.Keep("pumpkin") then break end
+                        local rd = GetRoot()
+                        if rd and (it.Pos - rd.Position).Magnitude > 2000 then
+                            pcall(function()
+                                TPTo(it.Pos + Vector3.new(0, 3, 0))
+                            end)
+                        else
+                            WalkFly(it.Pos + Vector3.new(0, 3, 0), Options.FlySpeed.Value)
+                        end
+                        print("[南瓜] 到 " .. tostring(it.Obj.Name) .. " 等待2秒" .. (dropName and (" 出售点=" .. tostring(dropName)) or " 未找到出售点"))
+                        task.wait(2)
+                        if dropPos then
+                            WalkFly(dropPos + Vector3.new(0, 3, 0), Options.FlySpeed.Value)
+                            task.wait(0.5)
+                        end
+                    end
+                    MoveLock.Free("pumpkin")
+                end
+            end
+        else
+            ready = false
+            MoveLock.Free("pumpkin")
+        end
+    end
+end)
+
+task.spawn(function()
+    while true do
+        task.wait(1)
+        if Toggles.BuyHalloweenEgg and Toggles.BuyHalloweenEgg.Value then
+            pcall(function()
+                local r = ReplicatedStorage:FindFirstChild("Remotes")
+                local g = r and r:FindFirstChild("Game")
+                local ev = g and g:FindFirstChild("BuyHalloweenEgg")
+                if ev then
+                    ev:InvokeServer("Halloween Egg")
+                end
+            end)
+        end
+    end
+end)
 
 local RadarBox = Tabs.Main:AddRightGroupbox("自动购买雷达")
 Toggles.RadarAdv = RadarBox:AddToggle("RadarAdv", { Text = "高级雷达", Default = false })
@@ -2601,6 +3908,8 @@ if ThemeManager then
 end
 
 local LastTP2 = 0
+local TPEggVal = 0
+local HomeTries = 0
 task.spawn(function()
     while true do
         task.wait(0.5)
@@ -2608,36 +3917,41 @@ task.spawn(function()
             local set = GetCheckedSet()
             if next(set) then
                 local root = GetRoot()
-                if root then
+                if root and not homeBusy and MoveLock.Hold("tp2") then
                     if GoHome then
                         if os.clock() - LastTP2 >= Options.DelayTime.Value then
-                            local homePart = nil
-                            if MyPlot then
-                                homePart = MyPlot:IsA("BasePart") and MyPlot or MyPlot:FindFirstChildWhichIsA("BasePart")
-                            end
-                            if homePart then
-                                local hp = homePart.Position
+                            local hp = GetHomePos()
+                            if hp then
                                 if (root.Position - hp).Magnitude < 8 then
                                     GoHome = false
                                     LastTP2 = 0
-                                else
-                                    if DropAndGoHome(hp) then
+                                    HomeTries = 0
+                                elseif HomeTries < 2 then
+                                    HomeTries = HomeTries + 1
+                                    homeBusy = true
+                                    local okHome = DropAndGoHome(hp, TPEggVal)
+                                    homeBusy = false
+                                    if okHome then
                                         GoHome = false
                                         LastTP2 = 0
+                                        HomeTries = 0
                                     end
+                                else
+                                    GoHome = false
+                                    LastTP2 = os.clock()
+                                    HomeTries = 0
                                 end
                             else
                                 GoHome = false
-                                LastTP2 = 0
+                                LastTP2 = os.clock()
+                                HomeTries = 0
                             end
                         end
                     elseif os.clock() - LastTP2 >= Options.DelayTime.Value then
                         local best, bestDist = nil, math.huge
                         for _, e in ipairs(CollectEggs()) do
-                            local isVolcano = GetEggValue(e.Obj.Name) == 2500000000000
-                            if isVolcano or set[OfficialFull(e.Obj.Name)] then
+                            if set[OfficialFull(e.Obj.Name)] then
                                 local d = (e.Pos - root.Position).Magnitude
-                                if isVolcano then d = d - 1e9 end
                                 if d < bestDist then
                                     bestDist = d
                                     best = e
@@ -2645,100 +3959,24 @@ task.spawn(function()
                             end
                         end
                         if best then
-                            if GetEggValue(best.Obj.Name) == 2500000000000 then
-                                if os.clock() - LastVolcanoRun >= 3 then
-                                    LastVolcanoRun = os.clock()
-                                    VolcanoActive = true
-                                    pcall(function()
-                                        VolcanoRunXD()
-                                    end)
-                                    VolcanoActive = false
-                                end
-                            else
-                                LastTP2 = os.clock()
-                                pcall(function()
-                                    TPTo(EggTopPos(best))
-                                end)
-                                LockToEgg(best, Options.DelayTime.Value, true)
-                                GoHome = true
-                            end
+                            PetUtil.Prepare()
+                            pcall(function()
+                                TPTo(EggTopPos(best))
+                            end)
+                            LockToEgg(best, Options.DelayTime.Value, true)
+                            LastTP2 = os.clock()
+                            TPEggVal = GetEggValue(best.Obj.Name)
+                            HomeTries = 0
+                            GoHome = true
                         end
                     end
+                    MoveLock.Free("tp2")
                 end
             end
         else
-            if not (Toggles.AutoTP and Toggles.AutoTP.Value) then
-                GoHome = false
-            end
-        end
-    end
-end)
-
-task.spawn(function()
-    while true do
-        task.wait(0.5)
-        if Toggles.AutoTP and Toggles.AutoTP.Value and not (Toggles.AutoTP2 and Toggles.AutoTP2.Value) then
-            local set = GetCheckedSet()
-            if next(set) then
-                local root = GetRoot()
-                if root and not Flying and not VolcanoActive then
-                    if GoHome then
-                        if os.clock() - LastArrive >= Options.DelayTime.Value then
-                            local homePart = nil
-                            if MyPlot then
-                                homePart = MyPlot:IsA("BasePart") and MyPlot or MyPlot:FindFirstChildWhichIsA("BasePart")
-                            end
-                            if homePart then
-                                local hp = homePart.Position
-                                if (root.Position - hp).Magnitude < 8 then
-                                    GoHome = false
-                                    LastArrive = 0
-                                else
-                                    DropAndGoHome(hp)
-                                end
-                            else
-                                GoHome = false
-                                LastArrive = 0
-                            end
-                        end
-                    elseif os.clock() - LastArrive >= Options.DelayTime.Value then
-                        if not VolcanoActive then
-                            local best, bestDist = nil, math.huge
-                            for _, e in ipairs(CollectEggs()) do
-                                local isVolcano = GetEggValue(e.Obj.Name) == 2500000000000
-                                if isVolcano or set[OfficialFull(e.Obj.Name)] then
-                                    local d = (e.Pos - root.Position).Magnitude
-                                    if isVolcano then d = d - 1e9 end
-                                    if d < bestDist then
-                                        bestDist = d
-                                        best = e
-                                    end
-                                end
-                            end
-                            if best then
-                                if GetEggValue(best.Obj.Name) == 2500000000000 then
-                                    if os.clock() - LastVolcanoRun >= 3 then
-                                        LastVolcanoRun = os.clock()
-                                        VolcanoActive = true
-                                        pcall(function()
-                                            VolcanoRunXD()
-                                        end)
-                                        VolcanoActive = false
-                                    end
-                                elseif bestDist > 6 then
-                                    FlyTo(EggTopPos(best), Options.FlySpeed.Value, true)
-                                end
-                            end
-                        end
-                    end
-                end
-            end
-        else
-            if Flying and not VolcanoActive then
-                StopFly()
-            end
             if not (Toggles.AutoTP2 and Toggles.AutoTP2.Value) then
                 GoHome = false
+                MoveLock.Free("tp2")
             end
         end
     end
@@ -2802,12 +4040,15 @@ task.spawn(function()
                         egg = GetNearestEgg()
                     end
                 end
-                if egg then
+                if egg and MoveLock.Hold("dip") then
                     LastDipRun = os.clock()
+                    PetUtil.Prepare()
                     pcall(function()
                         TPTo(EggTopPos(egg))
                     end)
-                    task.wait(1)
+                    LockToEgg(egg, Options.DelayTime.Value, true)
+                    TPEggVal = GetEggValue(egg.Obj.Name)
+                    task.wait(Options.DelayTime.Value)
                     pcall(function()
                         TPTo(VolcanoDipCoord)
                     end)
@@ -2826,12 +4067,11 @@ task.spawn(function()
                         end
                     end)
                     task.wait(10)
-                    if MyPlot then
-                        local home = MyPlot:IsA("BasePart") and MyPlot or MyPlot:FindFirstChildWhichIsA("BasePart")
-                        if home then
-                            DropAndGoHome(home)
-                        end
+                    local hp = GetHomePos()
+                    if hp then
+                        DropAndGoHome(hp, TPEggVal)
                     end
+                    MoveLock.Free("dip")
                 end
             end
         end
