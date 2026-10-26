@@ -11,7 +11,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local player = Players.LocalPlayer
 
 local ATTACK_RANGE = 200
-local AUTO_INTERACT_RANGE = 12
+local AUTO_INTERACT_RANGE = 6
 local FALLBACK_SPEED = 16
 local PICKUP_TRIGGER_INTERVAL = 0.03
 local LINK_INTERACT_INTERVAL = 0.25
@@ -36,14 +36,24 @@ end
 
 local Event = waitChild(ReplicatedStorage, "EggHitRequest", 10)
 if not Event then
-	game:GetService("StarterGui"):SetCore("SendNotification", {Title = "偷蛋脚本", Text = "缺少对象: ReplicatedStorage.EggHitRequest", Duration = 8})
-	return
+	game:GetService("StarterGui"):SetCore("SendNotification", {Title = "偷蛋脚本", Text = "打蛋接口缺失: EggHitRequest 未找到(游戏更新可能已改名)", Duration = 8})
 end
 local PET_RETURN_POS = Vector3.new(-78.811653, 3.498025, -21.007202)
 
 local char = player.Character or player.CharacterAdded:Wait()
 local humanoid = waitChildLoop(char, "Humanoid")
 local hrp = waitChildLoop(char, "HumanoidRootPart")
+
+-- 活动/主页统一调度优先级：糖果玉米(1) > 鬼屋(2) > 糖果(3) > 主页(4)
+local autoCorn = false
+local autoHauntedHouse = false
+local autoCandy = false
+local function activityPriorityActive(rank)
+	if autoCorn and rank > 1 then return true end
+	if autoHauntedHouse and rank > 2 then return true end
+	if autoCandy and rank > 3 then return true end
+	return false
+end
 
 local autoRun = false
 local autoRunToggle = nil
@@ -64,7 +74,7 @@ local petEspEnabled = false
 local eggEspEnabled = false
 local isLocked = false
 local keepAliveConn = nil
-local savedWalkSpeed = humanoid.WalkSpeed
+local savedWalkSpeed = (humanoid and humanoid.WalkSpeed) or FALLBACK_SPEED
 
 local EGG_DATA = {
 	{ en = "Swamp", cn = "沼泽蛋", weight = nil, rarity = "Common" },
@@ -96,11 +106,15 @@ local EGG_DATA = {
 	{ en = "Plasma", cn = "等离子蛋", weight = 6000000, rarity = "Celestial" },
 	{ en = "Nebula", cn = "星云蛋", weight = 7000000, rarity = "Celestial" },
 	{ en = "Supernova", cn = "超新星蛋", weight = 8000000, rarity = "Celestial" },
+	{ en = "Phantom", cn = "幽灵蛋", weight = 9000000, rarity = "Spectral" },
+	{ en = "Skill", cn = "技能蛋", weight = 10000000, rarity = "Spectral" },
+	{ en = "Skull", cn = "骷髅蛋", weight = 10500000, rarity = "Spectral" },
+	{ en = "LockedEgg", cn = "锁定蛋", weight = 11000000, rarity = "Spectral" },
 }
 
 local EGG_CN_TO_EN = {}
-local EGG_WEIGHT_BY_CN = {}
-local EGG_RARITY_BY_CN = {}
+EGG_WEIGHT_BY_CN = {}
+EGG_RARITY_BY_CN = {}
 for _, e in ipairs(EGG_DATA) do
 	EGG_CN_TO_EN[e.cn] = e.en
 	EGG_WEIGHT_BY_CN[e.cn] = e.weight
@@ -109,7 +123,7 @@ end
 
 table.sort(EGG_DATA, function(a, b) return (a.weight or 0) < (b.weight or 0) end)
 
-local EGG_OPTIONS = {}
+EGG_OPTIONS = {}
 for _, e in ipairs(EGG_DATA) do
 	table.insert(EGG_OPTIONS, e.cn)
 end
@@ -277,9 +291,9 @@ local PET_DATA = {
 	{ en = "Lindworm", cn = "巨翼地龙", value = 10, rarity = "Divine" },
 }
 
-local PET_NAME_CN = {}
-local PET_RARITY_CN = {}
-local PET_CN_TO_EN = {}
+PET_NAME_CN = {}
+PET_RARITY_CN = {}
+PET_CN_TO_EN = {}
 for _, p in ipairs(PET_DATA) do
 	PET_NAME_CN[p.en] = p.cn
 	PET_RARITY_CN[p.cn] = p.rarity
@@ -288,26 +302,28 @@ end
 
 table.sort(PET_DATA, function(a, b) return a.value < b.value end)
 
-local RARITY_CN = {
+RARITY_CN = {
 	Common = "普通", Uncommon = "罕见", Rare = "稀有", Epic = "史诗",
 	Legendary = "传说", Mythic = "神话", Mythical = "神话", Divine = "神圣",
 	Cosmic = "宇宙", Secret = "秘密", Eternal = "永恒",
 	HUGE = "巨大", Huge = "巨大", TITANIC = "泰坦", Titanic = "泰坦",
 	Celestial = "天界", Hell = "地狱",
+	Spectral = "幽魂",
 	Void = "虚空", Omega = "欧米伽",
 }
 
-local RARITY_COLOR = {
+RARITY_COLOR = {
 	Common = "#FFFFFF", Uncommon = "#00FF00", Rare = "#00BFFF",
 	Epic = "#A020F0", Legendary = "#FFD700", Mythic = "#FF69B4",
 	Mythical = "#FF69B4", Divine = "#FFA500", Cosmic = "#8A2BE2",
 	Secret = "#FF4500", Eternal = "#00FFFF",
 	HUGE = "#FF1493", Huge = "#FF1493", TITANIC = "#FF0000", Titanic = "#FF0000",
 	Celestial = "#FFE066", Hell = "#B22222",
+	Spectral = "#00CED1",
 	Void = "#4B0082", Omega = "#FF8C00",
 }
 
-local PET_RARITY_OPTIONS = { "普通", "罕见", "稀有", "史诗", "传说", "神话", "宇宙", "秘密", "永恒", "神圣", "天界", "地狱", "虚空", "欧米伽" }
+PET_RARITY_OPTIONS = { "普通", "罕见", "稀有", "史诗", "传说", "神话", "宇宙", "秘密", "永恒", "神圣", "天界", "地狱", "虚空", "欧米伽", "幽魂" }
 
 local selectedEggEnglish = {}
 local selectedPetRarities = {}
@@ -942,7 +958,7 @@ end
 local function attackEgg(eggPart)
 	if not eggPart or not eggPart.Parent then return end
 	lockUtil.tapSlot1Button()
-	Event:FireServer(eggPart, 1)
+	if Event then Event:FireServer(eggPart, 1) end
 end
 
 local function getEggHealth(obj)
@@ -986,9 +1002,9 @@ local function getEggHealth(obj)
 	return hp
 end
 
-local PET_PREFIX_WORDS = { "Common", "Uncommon", "Rare", "Epic", "Legendary", "Mythic", "Mythical", "Cosmic", "Secret", "Eternal", "Divine", "HUGE", "Huge", "TITANIC", "Titanic", "Fortune", "Lucky", "Gold", "Sun", "Solar", "Starry", "Star", "Blackhole", "BlackHole", "Volcanic", "Lava", "Blossom", "Flower", "Bamboo", "Angel", "Holy", "Fallen", "FallenAngel", "Rift", "Void", "Celestial", "Omega", "Sea", "Ocean", "Lake", "Frozen", "Ice", "Snow", "Yeti", "Rainbow", "Candy", "Tree", "Wood", "Rock", "Stone", "Forest", "Cactus", "Desert", "Bones", "Bone", "Skeleton", "Scorpion", "Easter", "Gooey", "Slime", "Sticky", "Swamp", "Water", "Aqua" }
+PET_PREFIX_WORDS = { "Common", "Uncommon", "Rare", "Epic", "Legendary", "Mythic", "Mythical", "Cosmic", "Secret", "Eternal", "Divine", "HUGE", "Huge", "TITANIC", "Titanic", "Fortune", "Lucky", "Gold", "Sun", "Solar", "Starry", "Star", "Blackhole", "BlackHole", "Volcanic", "Lava", "Blossom", "Flower", "Bamboo", "Angel", "Holy", "Fallen", "FallenAngel", "Rift", "Void", "Celestial", "Omega", "Sea", "Ocean", "Lake", "Frozen", "Ice", "Snow", "Yeti", "Rainbow", "Candy", "Tree", "Wood", "Rock", "Stone", "Forest", "Cactus", "Desert", "Bones", "Bone", "Skeleton", "Scorpion", "Easter", "Gooey", "Slime", "Sticky", "Swamp", "Water", "Aqua", "Spectral" }
 
-PET_PREFIX_WORDS.cn = { "普通", "罕见", "稀有", "史诗", "传说", "神话", "宇宙", "秘密", "永恒", "神圣", "巨大", "泰坦", "天界", "虚空", "欧米伽" }
+PET_PREFIX_WORDS.cn = { "普通", "罕见", "稀有", "史诗", "传说", "神话", "宇宙", "秘密", "永恒", "神圣", "巨大", "泰坦", "天界", "虚空", "欧米伽", "幽魂" }
 
 local function stripNamePrefix(raw)
 	if not raw then return raw end
@@ -1042,19 +1058,20 @@ local function normalizePetName(raw)
 	return nil
 end
 
-local RARITY_WORDS = { "Common", "Uncommon", "Rare", "Epic", "Legendary", "Mythic", "Mythical", "Cosmic", "Secret", "Eternal", "Divine", "HUGE", "Huge", "TITANIC", "Titanic", "Celestial", "Heaven", "Heavenly", "Hell", "Hades", "Infernal", "Inferno", "Underworld", "Nether", "Void", "Omega" }
+RARITY_WORDS = { "Common", "Uncommon", "Rare", "Epic", "Legendary", "Mythic", "Mythical", "Cosmic", "Secret", "Eternal", "Divine", "HUGE", "Huge", "TITANIC", "Titanic", "Celestial", "Heaven", "Heavenly", "Hell", "Hades", "Infernal", "Inferno", "Underworld", "Nether", "Void", "Omega", "Spectral" }
 
-local RARITY_ALIAS_EN = {
+RARITY_ALIAS_EN = {
 	Mythical = "Mythic", Heaven = "Celestial", Heavenly = "Celestial",
 	Hades = "Hell", Infernal = "Hell", Inferno = "Hell", Underworld = "Hell", Nether = "Hell",
 }
 
-local RARITY_CN_TO_EN = {
+RARITY_CN_TO_EN = {
 	["普通"] = "Common", ["罕见"] = "Uncommon", ["稀有"] = "Rare",
 	["史诗"] = "Epic", ["传说"] = "Legendary", ["神话"] = "Mythic",
 	["宇宙"] = "Cosmic", ["秘密"] = "Secret", ["永恒"] = "Eternal",
 	["神圣"] = "Divine", ["天界"] = "Celestial", ["地狱"] = "Hell",
 	["虚空"] = "Void", ["欧米伽"] = "Omega",
+	["幽魂"] = "Spectral",
 }
 
 local function extractRarityFromName(raw)
@@ -1073,7 +1090,7 @@ local function extractRarityFromName(raw)
 	return nil
 end
 
-local RARITY_ATTR_KEYWORDS = { "rarity", "quality", "tier", "rank", "grade", "rare", "稀有", "品质", "阶级" }
+RARITY_ATTR_KEYWORDS = { "rarity", "quality", "tier", "rank", "grade", "rare", "稀有", "品质", "阶级" }
 
 local function scanRarityFromAttributes(obj)
 	if not obj then return nil end
@@ -1241,7 +1258,7 @@ local fullLockSnap = {}
 local function lockCharacterFull()
 	if fullLockConn then return end
 	if not char or not humanoid or not humanoid.Parent then return end
-	local floatH = 2
+	local floatH = 3
 	local hrp = char:FindFirstChild("HumanoidRootPart")
 	if not hrp then return end
 	pcall(function()
@@ -1667,7 +1684,10 @@ local PICKAXE_SHOP = {
 	{ name = "Secret", cn = "秘密" },
 	{ name = "Cool", cn = "酷炫" },
 	{ name = "Galaxy", cn = "银河" },
-	{ name = "Celestial", cn = "神圣" },
+	{ name = "Celestial", cn = "天界", title = "天界镐子" },
+	{ name = "Sci Fi", cn = "科幻" },
+	{ name = "Enchanted", cn = "附魔" },
+	{ name = "Haunted", cn = "万圣节", price = "1Qi" },
 }
 local TRAIL_SHOP = {
 	{ name = "White", cn = "白色" },
@@ -1681,6 +1701,7 @@ local TRAIL_SHOP = {
 	{ name = "Secret", cn = "秘密" },
 	{ name = "Laser", cn = "激光" },
 	{ name = "Moonlight", cn = "月光" },
+	{ name = "Spooky", cn = "幽灵", price = "1.5Qa" },
 }
 local PickaxeShopRequest = ReplicatedStorage:FindFirstChild("PickaxeShopRequest")
 local TrailShopRequest = ReplicatedStorage:FindFirstChild("TrailShopRequest")
@@ -1850,6 +1871,78 @@ local function walkToPlot(targetPos, arriveDist)
 	return r ~= "stop"
 end
 
+local function walkStraightTo(targetPos, arriveDist)
+	if not char or not char.Parent then return false end
+	arriveDist = arriveDist or 2
+	local maxTime = 30
+	local baseSpd = getCurrentSpeed()
+	if baseSpd < 1 then baseSpd = 1 end
+	-- 防跑步机速度污染：基础速度异常高时按普通走路速度走，避免悬空快跑
+	if baseSpd > 30 then baseSpd = 16 end
+	local function restoreSpd()
+		if humanoid and humanoid.Parent then
+			pcall(function() humanoid.WalkSpeed = baseSpd end)
+		end
+	end
+	if humanoid and humanoid.Parent then
+		pcall(function()
+			humanoid.PlatformStand = false
+			humanoid.JumpPower = 50
+			humanoid:ChangeState(Enum.HumanoidStateType.Running)
+		end)
+	end
+	local startPos = char:GetPivot().Position
+	local goal = Vector3.new(targetPos.X, startPos.Y, targetPos.Z)
+	local elapsed = 0
+	local lastPos = startPos
+	local stallT = 0
+	local stuckN = 0
+	local arrived = false
+	while elapsed < maxTime do
+		if not autoHome then break end
+		local curHrp = char:FindFirstChild("HumanoidRootPart")
+		if not curHrp then break end
+		local curPos = curHrp.Position
+		local remain = (Vector3.new(goal.X - curPos.X, 0, goal.Z - curPos.Z)).Magnitude
+		if remain < arriveDist then arrived = true break end
+		local dir = Vector3.new(goal.X - curPos.X, 0, goal.Z - curPos.Z)
+		local toGoal = dir.Unit
+		local cam = workspace.CurrentCamera
+		local camCF = cam and cam.CFrame
+		local camDir = camCF and camCF:VectorToObjectSpace(toGoal) or toGoal
+		local brakeD = baseSpd * 0.15
+		if brakeD < 3 then brakeD = 3 end
+		local useSpd = baseSpd
+		if remain < brakeD then
+			useSpd = remain * 8
+			if useSpd < 2 then useSpd = 2 end
+			if useSpd > baseSpd then useSpd = baseSpd end
+		end
+		if humanoid and humanoid.Parent and math.abs(humanoid.WalkSpeed - useSpd) > 0.1 then
+			pcall(function() humanoid.WalkSpeed = useSpd end)
+		end
+		pcall(function() humanoid:Move(camDir, true) end)
+		local dt = RunService.RenderStepped:Wait()
+		elapsed += dt
+		local moved = (curHrp.Position - lastPos).Magnitude
+		lastPos = curHrp.Position
+		if moved < 0.05 then
+			stallT += dt
+			if stallT > 0.4 then
+				stallT = 0
+				stuckN += 1
+				-- 纯直线：卡住不做侧移扭动，连续卡住则退出，等下一轮再走
+				if stuckN > 10 then break end
+			end
+		else
+			stallT = 0
+		end
+	end
+	pcall(function() humanoid:Move(Vector3.zero, true) end)
+	restoreSpd()
+	return arrived
+end
+
 local autoHomeConn = nil
 local function startAutoHome()
 	if autoHomeConn then return end
@@ -1876,7 +1969,7 @@ local function startAutoHome()
 				end
 			end
 			for _, ch in ipairs(root:GetDescendants()) do
-				if ch:IsA("ProximityPrompt") and string.find(string.lower(ch.Name), "tread", 1, true) then
+				if ch:IsA("ProximityPrompt") and string.find(string.lower(ch.Name), "treadmill", 1, true) then
 					local top = ch
 					while top.Parent and top.Parent ~= root do
 						top = top.Parent
@@ -1892,6 +1985,9 @@ local function startAutoHome()
 		while autoHome do
 			local plot = getMyPlot()
 			if plot then
+				local homePart = plot:FindFirstChild("Baseplate") or plot.PrimaryPart or plot:FindFirstChildWhichIsA("BasePart")
+				local treadPart = nil
+				local treadSpot = nil
 				local now = os.clock()
 				if treadCache and (not treadCache:IsDescendantOf(plot) or now >= treadRecheck) then treadCache = nil end
 				if not treadCache then
@@ -1899,35 +1995,66 @@ local function startAutoHome()
 					treadRecheck = now + 3
 				end
 				local treadmill = treadCache
-				local homePart = plot:FindFirstChild("Baseplate") or plot.PrimaryPart or plot:FindFirstChildWhichIsA("BasePart")
-				local treadPart = nil
 				if treadmill then
 					if treadmill:IsA("BasePart") then
 						treadPart = treadmill
 					else
 						treadPart = treadmill:FindFirstChildWhichIsA("BasePart")
 					end
+					treadSpot = treadmill:FindFirstChildWhichIsA("ProximityPrompt", true)
 				end
 				if not treadPart then treadCache = nil end
 				local curHrp = char and char:FindFirstChild("HumanoidRootPart")
 				if curHrp then
 					local curPos = curHrp.Position
-					local targetPos = nil
-
-					if homePart then
-						local homePos = homePart.Position
-						if (homePos - curPos).Magnitude > 6 then
-							targetPos = homePos
-						elseif treadPart and (treadPart.Position - curPos).Magnitude > 1.5 then
-							targetPos = treadPart.Position
-						end
-					elseif treadPart and (treadPart.Position - curPos).Magnitude > 1.5 then
-						targetPos = treadPart.Position
+					local treadGoal = treadSpot and treadSpot.WorldPosition or (treadPart and treadPart.Position)
+					-- 目标点压到可站立表面，避免角色被引导到履带上方悬空
+					if treadGoal then
+						local gY = getGroundY(treadGoal, true)
+						if gY then treadGoal = Vector3.new(treadGoal.X, gY, treadGoal.Z) end
 					end
-					if targetPos then
-						lockCharacter()
-						walkToPlot(targetPos, 2)
-						unlockCharacter()
+					local homePos = homePart and homePart.Position
+					local treadDist = treadGoal and (treadGoal - curPos).Magnitude
+					-- 已在跑步机模型上/范围内（含被带动跑动）：不干预，保持自然状态
+					local onTread = false
+					if treadmill then
+						local tbPos, tbSize = nil, nil
+						if treadmill:IsA("BasePart") then
+							tbPos, tbSize = treadmill.Position, treadmill.Size
+						elseif treadmill:IsA("Model") and treadmill.PrimaryPart then
+							local cf, sz = treadmill:GetBoundingBox()
+							tbPos, tbSize = cf.Position, sz
+						end
+						if tbPos and tbSize then
+							local rel = curPos - tbPos
+							onTread = math.abs(rel.X) <= tbSize.X * 0.5 + 3
+								and math.abs(rel.Z) <= tbSize.Z * 0.5 + 3
+								and math.abs(rel.Y - tbPos.Y) <= tbSize.Y * 0.5 + 3
+						end
+					end
+					if onTread then
+						-- 角色已在跑步机上：不干预
+					elseif treadDist and treadDist <= 8 then
+						-- 已在跑步机附近：不干预，保持自然状态
+					else
+						local targetPos = nil
+						local targetStraight = false
+						if homePos and (homePos - curPos).Magnitude > 4 then
+							targetPos = homePos
+						elseif treadGoal and treadDist and treadDist > 8 then
+							targetPos = treadGoal
+							targetStraight = true
+						end
+						if targetPos then
+							-- 走路期间不锁定：lockCharacter 会抬离地面锁Y，导致腿悬空"走路"
+							unlockCharacter()
+							if targetStraight then
+								walkStraightTo(targetPos, 2)
+							else
+								walkToPlot(targetPos, 2)
+							end
+							unlockCharacter()
+						end
 					end
 				end
 			end
@@ -1938,131 +2065,410 @@ local function startAutoHome()
 end
 
 
-local HellBossFight = workspace:FindFirstChild("HellBossFight")
-local DemonBoss = HellBossFight and HellBossFight:FindFirstChild("DemonBoss")
-local BatHitRequest = ReplicatedStorage:FindFirstChild("BatHitRequest")
-local BOSS_ATTACK_COOLDOWN = 0.6
-local autoWalkBoss = false
-local autoAttackBoss = false
-local walkBossConn = nil
-local attackBossConn = nil
+local autoCandyConn = nil
 
-local function getDemonBossPart()
-	if not DemonBoss then return nil end
-	if DemonBoss:IsA("Model") then
-		return DemonBoss.PrimaryPart or DemonBoss:FindFirstChild("HumanoidRootPart") or DemonBoss:FindFirstChildWhichIsA("BasePart")
+local function collectCandyTargets()
+	local folder = workspace:FindFirstChild("HalloweenCandyPiles")
+	if not folder then return {} end
+	local list = {}
+	for _, child in ipairs(folder:GetChildren()) do
+		local part = nil
+		if child:IsA("BasePart") then
+			part = child
+		elseif child.PrimaryPart then
+			part = child.PrimaryPart
+		else
+			part = child:FindFirstChildWhichIsA("BasePart")
+		end
+		if part and part.Parent then
+			table.insert(list, { obj = child, part = part, hp = getEggHealth(child) })
+		end
 	end
-	if DemonBoss:IsA("BasePart") then return DemonBoss end
-	return nil
+	table.sort(list, function(a, b)
+		if a.hp == nil then return false end
+		if b.hp == nil then return true end
+		return a.hp < b.hp
+	end)
+	return list
 end
 
-local function startAutoWalkBoss()
-	if walkBossConn then return end
-	walkBossConn = task.spawn(function()
-		while autoWalkBoss do
-			local bossPart = getDemonBossPart()
-			local hrp = char and char:FindFirstChild("HumanoidRootPart")
-			if bossPart and hrp then
-				local bossPos = bossPart.Position
-				local curPos = hrp.Position
-				local dir = Vector3.new(bossPos.X - curPos.X, 0, bossPos.Z - curPos.Z)
-				if dir.Magnitude > 3 then
-					pcall(function()
-						if keepAliveConn then
-							keepAliveConn:Disconnect()
-							keepAliveConn = nil
+local function startAutoCandy()
+	if autoCandyConn then return end
+	autoCandyConn = task.spawn(function()
+		while autoCandy do
+			while autoCandy and activityPriorityActive(3) do
+				task.wait(0.5)
+			end
+			if not autoCandy then break end
+			local targets = collectCandyTargets()
+			if #targets == 0 then
+				task.wait(2)
+			else
+				for _, t in ipairs(targets) do
+					if not autoCandy then break end
+					local part = t.part
+					if not part or not part.Parent then break end
+					local obj = t.obj
+					local hpNow = getEggHealth(obj)
+					if hpNow ~= nil and hpNow <= 0 then break end
+					local hrp = char and char:FindFirstChild("HumanoidRootPart")
+					if not hrp then break end
+					local toEgg = part.Position - hrp.Position
+					local flatDir = Vector3.new(toEgg.X, 0, toEgg.Z)
+					local standPos = part.Position
+					if flatDir.Magnitude >= 1 then
+						standPos = part.Position - flatDir.Unit * 5
+					else
+						standPos = part.Position - Vector3.new(5, 0, 0)
+					end
+					lockUtil.guardZone = nil
+					lockUtil.eggPos = part.Position
+					if not lockUtil.navWalk(standPos, 5, { brake = true }) then break end
+					local timeout = 60
+					local elapsed = 0
+					local lastHealth = humanoid and humanoid.Health or 100
+					while elapsed < timeout and autoCandy and not activityPriorityActive(3) do
+						if not part.Parent then break end
+						hpNow = getEggHealth(obj)
+						if hpNow ~= nil and hpNow <= 0 then break end
+						local curHealth = humanoid and humanoid.Health or lastHealth
+						local gotHit = curHealth < lastHealth - 0.5
+						lastHealth = curHealth
+						if not gotHit and char then
+							local hh = char:FindFirstChild("HumanoidRootPart")
+							if hh then
+								local dxx = hh.Position.X - standPos.X
+								local dzz = hh.Position.Z - standPos.Z
+								if (dxx * dxx + dzz * dzz) > 144 then gotHit = true end
+							end
 						end
-						if humanoid and humanoid.Parent then
-							humanoid.PlatformStand = false
-							humanoid.JumpPower = 50
-							humanoid:ChangeState(Enum.HumanoidStateType.Running)
+						if gotHit then
+							lockUtil.placeHover(standPos.X, standPos.Z, (getGroundY(standPos) or standPos.Y), 2)
+							lockCharacter()
+							local settleAtk = 0
+							local settleElapsed = 0
+							while settleElapsed < 0.5 and autoCandy do
+								if not part.Parent then break end
+								local dt2 = RunService.Heartbeat:Wait()
+								settleElapsed = settleElapsed + dt2
+								settleAtk = settleAtk + dt2
+								if settleAtk >= 0.1 then
+									attackEgg(part)
+									settleAtk = 0
+								end
+							end
+							unlockCharacter()
 						end
-					end)
-					local toGoal = dir.Unit
-					local cam = workspace.CurrentCamera
-					local camCF = cam and cam.CFrame
-					local camDir = camCF and camCF:VectorToObjectSpace(toGoal) or toGoal
-					pcall(function() humanoid:Move(camDir, true) end)
-				else
-					pcall(function() humanoid:Move(Vector3.zero, true) end)
+						local h = char and char:FindFirstChild("HumanoidRootPart")
+						if h and part.Parent then
+							h.CFrame = CFrame.lookAt(h.Position, Vector3.new(part.Position.X, h.Position.Y, part.Position.Z))
+						end
+						local dt = RunService.Heartbeat:Wait()
+						elapsed = elapsed + dt
+						if part.Parent then attackEgg(part) end
+					end
 				end
 			end
-			RunService.RenderStepped:Wait()
+			task.wait(0.5)
 		end
-		pcall(function()
-			if humanoid and humanoid.Parent then humanoid:Move(Vector3.zero, true) end
-		end)
-		walkBossConn = nil
+		autoCandyConn = nil
 	end)
 end
 
-local function startAutoAttackBoss()
-	if attackBossConn then return end
-	attackBossConn = task.spawn(function()
-		while autoAttackBoss do
-			if BatHitRequest then
-				pcall(function() BatHitRequest:FireServer(nil) end)
-			end
-			task.wait(BOSS_ATTACK_COOLDOWN)
+local autoCornConn = nil
+local CORN_DANGER = 15
+local CORN_SAFE = 20
+
+local function getPumpkinKings()
+	local folder = workspace:FindFirstChild("BloodMoonPumpkinKings")
+	if not folder then return {} end
+	local list = {}
+	for _, child in ipairs(folder:GetChildren()) do
+		local pos = nil
+		if child:IsA("BasePart") then
+			pos = child.Position
+		elseif child.PrimaryPart then
+			pos = child.PrimaryPart.Position
+		else
+			local rp = child:FindFirstChild("HumanoidRootPart")
+			if not rp then rp = child:FindFirstChildWhichIsA("BasePart") end
+			if rp then pos = rp.Position end
 		end
-		attackBossConn = nil
+		if pos then table.insert(list, pos) end
+	end
+	return list
+end
+
+local function nearestKing(fromPos)
+	local best, bestD = nil, math.huge
+	for _, kp in ipairs(getPumpkinKings()) do
+		local d = (kp - fromPos).Magnitude
+		if d < bestD then bestD = d; best = kp end
+	end
+	return best, bestD
+end
+
+local function collectCornTargets()
+	local folder = workspace:FindFirstChild("CandyHeistVisuals")
+	if not folder then return {} end
+	local list = {}
+	local hrp = char and char:FindFirstChild("HumanoidRootPart")
+	local myPos = hrp and hrp.Position
+	for _, child in ipairs(folder:GetChildren()) do
+		if child.Name ~= "CandyHeistBackpack" then
+			local part = nil
+			if child:IsA("BasePart") then
+				part = child
+			elseif child.PrimaryPart then
+				part = child.PrimaryPart
+			else
+				part = child:FindFirstChildWhichIsA("BasePart")
+			end
+			if part and part.Parent then
+				local hp = getEggHealth(child)
+				if hp == nil or hp > 0 then
+					local dist = myPos and (part.Position - myPos).Magnitude or math.huge
+					table.insert(list, { obj = child, part = part, hp = hp, dist = dist })
+				end
+			end
+		end
+	end
+	table.sort(list, function(a, b) return a.dist < b.dist end)
+	return list
+end
+
+local function cornWalk(targetPos, arriveDist)
+	if not char or not char.Parent then return false end
+	arriveDist = arriveDist or 2
+	local maxTime = 30
+	local baseSpd = getCurrentSpeed()
+	if baseSpd < 1 then baseSpd = 1 end
+	if baseSpd > 30 then baseSpd = 16 end
+	local function restoreSpd()
+		if humanoid and humanoid.Parent then
+			pcall(function() humanoid.WalkSpeed = baseSpd end)
+		end
+	end
+	if humanoid and humanoid.Parent then
+		pcall(function()
+			humanoid.PlatformStand = false
+			humanoid.JumpPower = 50
+			humanoid:ChangeState(Enum.HumanoidStateType.Running)
+		end)
+	end
+	local startPos = char:GetPivot().Position
+	local goal = Vector3.new(targetPos.X, startPos.Y, targetPos.Z)
+	local elapsed = 0
+	local lastPos = startPos
+	local stallT = 0
+	local stuckN = 0
+	local arrived = false
+	local flee = false
+	while elapsed < maxTime do
+		if not autoCorn then break end
+		local curHrp = char:FindFirstChild("HumanoidRootPart")
+		if not curHrp then break end
+		local curPos = curHrp.Position
+		local _, kd = nearestKing(curPos)
+		if kd < CORN_DANGER then
+			flee = true
+			break
+		end
+		local remain = (Vector3.new(goal.X - curPos.X, 0, goal.Z - curPos.Z)).Magnitude
+		if remain < arriveDist then arrived = true break end
+		local dir = Vector3.new(goal.X - curPos.X, 0, goal.Z - curPos.Z)
+		local toGoal = dir.Unit
+		local cam = workspace.CurrentCamera
+		local camCF = cam and cam.CFrame
+		local camDir = camCF and camCF:VectorToObjectSpace(toGoal) or toGoal
+		local brakeD = baseSpd * 0.15
+		if brakeD < 3 then brakeD = 3 end
+		local useSpd = baseSpd
+		if remain < brakeD then
+			useSpd = remain * 8
+			if useSpd < 2 then useSpd = 2 end
+			if useSpd > baseSpd then useSpd = baseSpd end
+		end
+		if humanoid and humanoid.Parent and math.abs(humanoid.WalkSpeed - useSpd) > 0.1 then
+			pcall(function() humanoid.WalkSpeed = useSpd end)
+		end
+		pcall(function() humanoid:Move(camDir, true) end)
+		local dt = RunService.RenderStepped:Wait()
+		elapsed = elapsed + dt
+		local moved = (curHrp.Position - lastPos).Magnitude
+		lastPos = curHrp.Position
+		if moved < 0.05 then
+			stallT = stallT + dt
+			if stallT > 0.4 then
+				stallT = 0
+				stuckN = stuckN + 1
+				if stuckN > 10 then break end
+			end
+		else
+			stallT = 0
+		end
+	end
+	pcall(function() humanoid:Move(Vector3.zero, true) end)
+	restoreSpd()
+	if flee then return "flee" end
+	return arrived
+end
+
+local function startAutoCorn()
+	if autoCornConn then return end
+	autoCornConn = task.spawn(function()
+		while autoCorn do
+			local myHrp = char and char:FindFirstChild("HumanoidRootPart")
+			if not myHrp then
+				task.wait(1)
+			else
+				local myPos = myHrp.Position
+				local kingPos, kingDist = nearestKing(myPos)
+				if kingPos and kingDist < CORN_DANGER then
+					-- 被南瓜王追杀：向远离方向直线逃跑
+					local dir = myPos - kingPos
+					if dir.Magnitude < 0.01 then dir = Vector3.new(1, 0, 0) end
+					local fleeTarget = myPos + dir.Unit * 35
+					local gY = getGroundY(fleeTarget, true)
+					if gY then fleeTarget = Vector3.new(fleeTarget.X, gY, fleeTarget.Z) end
+					unlockCharacter()
+					cornWalk(fleeTarget, 2)
+					unlockCharacter()
+					task.wait(0.5)
+				else
+					local targets = collectCornTargets()
+					local picked = nil
+					for _, t in ipairs(targets) do
+						local _, d = nearestKing(t.part.Position)
+						if d >= CORN_SAFE then picked = t break end
+					end
+					if not picked then
+						task.wait(1)
+					else
+						local part = picked.part
+						local obj = picked.obj
+						local hrp = char and char:FindFirstChild("HumanoidRootPart")
+						if hrp then
+							local toEgg = part.Position - hrp.Position
+							local flatDir = Vector3.new(toEgg.X, 0, toEgg.Z)
+							local standPos = part.Position
+							if flatDir.Magnitude >= 1 then
+								standPos = part.Position - flatDir.Unit * 5
+							else
+								standPos = part.Position - Vector3.new(5, 0, 0)
+							end
+							local gY2 = getGroundY(standPos, true)
+							if gY2 then standPos = Vector3.new(standPos.X, gY2, standPos.Z) end
+							unlockCharacter()
+							local walkRes = cornWalk(standPos, 4)
+							unlockCharacter()
+							if walkRes ~= "flee" then
+								local timeout = 45
+								local elapsed = 0
+								local lastHealth = humanoid and humanoid.Health or 100
+								while elapsed < timeout and autoCorn do
+									if not part.Parent then break end
+									local hpNow = getEggHealth(obj)
+									if hpNow ~= nil and hpNow <= 0 then break end
+									local curHealth = humanoid and humanoid.Health or lastHealth
+									local gotHit = curHealth < lastHealth - 0.5
+									lastHealth = curHealth
+									local hh = char and char:FindFirstChild("HumanoidRootPart")
+									local _, kd = nearestKing(hh and hh.Position or myPos)
+									if kd < CORN_DANGER then break end
+									if not gotHit and hh then
+										local dxx = hh.Position.X - standPos.X
+										local dzz = hh.Position.Z - standPos.Z
+										if (dxx * dxx + dzz * dzz) > 144 then gotHit = true end
+									end
+									if gotHit then
+										lockUtil.placeHover(standPos.X, standPos.Z, (getGroundY(standPos) or standPos.Y), 2)
+										lockCharacter()
+										local settleAtk = 0
+										local settleElapsed = 0
+										while settleElapsed < 0.5 and autoCorn do
+											if not part.Parent then break end
+											local dt2 = RunService.Heartbeat:Wait()
+											settleElapsed = settleElapsed + dt2
+											settleAtk = settleAtk + dt2
+											if settleAtk >= 0.1 then
+												attackEgg(part)
+												settleAtk = 0
+											end
+										end
+										unlockCharacter()
+									end
+									if hh and part.Parent then
+										hh.CFrame = CFrame.lookAt(hh.Position, Vector3.new(part.Position.X, hh.Position.Y, part.Position.Z))
+									end
+									local dt = RunService.Heartbeat:Wait()
+									elapsed = elapsed + dt
+									if part.Parent then attackEgg(part) end
+								end
+								-- 打破后停留，等待糖果玉米掉落被拾取
+								local settle2 = 0
+								while settle2 < 1 and autoCorn do
+									local dt3 = RunService.Heartbeat:Wait()
+									settle2 = settle2 + dt3
+									local h2 = char and char:FindFirstChild("HumanoidRootPart")
+									local _, kd2 = nearestKing(h2 and h2.Position or myPos)
+									if kd2 < CORN_DANGER then break end
+								end
+							end
+						end
+					end
+				end
+			end
+			task.wait(0.5)
+		end
+		autoCornConn = nil
 	end)
 end
 
-local autoGoRift = false
-local goRiftConn = nil
-
-local function getRiftJoinHellPart()
-	local zoneBuilds = workspace.Build and workspace.Build:FindFirstChild("ZoneBuilds")
-	if not zoneBuilds then return nil end
-	local zone7 = zoneBuilds:FindFirstChild("Zone7")
-	if not zone7 then return nil end
-	local jh = zone7:FindFirstChild("JoinHell")
-	if not jh then return nil end
-	if jh:IsA("BasePart") then return jh end
-	if jh:IsA("Model") then
-		return jh.PrimaryPart or jh:FindFirstChild("HumanoidRootPart") or jh:FindFirstChildWhichIsA("BasePart")
-	end
-	return nil
+local HalloweenShopRequest = ReplicatedStorage:FindFirstChild("HalloweenShopRequest")
+local function buyHalloweenEgg(name)
+	if not HalloweenShopRequest then return end
+	pcall(function()
+		HalloweenShopRequest:InvokeServer("BuyEgg", name)
+	end)
 end
 
-local function startAutoGoRift()
-	if goRiftConn then return end
-	goRiftConn = task.spawn(function()
-		while autoGoRift do
-			local riftPart = getRiftJoinHellPart()
-			local hrp = char and char:FindFirstChild("HumanoidRootPart")
-			if riftPart and hrp then
-				local riftPos = riftPart.Position
-				local curPos = hrp.Position
-				local dir = Vector3.new(riftPos.X - curPos.X, 0, riftPos.Z - curPos.Z)
-				if dir.Magnitude > 4 then
-					pcall(function()
-						if keepAliveConn then
-							keepAliveConn:Disconnect()
-							keepAliveConn = nil
-						end
-						if humanoid and humanoid.Parent then
-							humanoid.PlatformStand = false
-							humanoid.JumpPower = 50
-							humanoid:ChangeState(Enum.HumanoidStateType.Running)
-						end
-					end)
-					local toGoal = dir.Unit
-					local cam = workspace.CurrentCamera
-					local camCF = cam and cam.CFrame
-					local camDir = camCF and camCF:VectorToObjectSpace(toGoal) or toGoal
-					pcall(function() humanoid:Move(camDir, true) end)
-				else
-					pcall(function() humanoid:Move(Vector3.zero, true) end)
-				end
-			end
-			RunService.RenderStepped:Wait()
+local autoBuyEgg1 = false
+local autoBuyEgg1Conn = nil
+local function startAutoBuyEgg1()
+	if autoBuyEgg1Conn then return end
+	autoBuyEgg1Conn = task.spawn(function()
+		while autoBuyEgg1 do
+			buyHalloweenEgg("HalloweenEgg1")
+			task.wait(1)
 		end
-		pcall(function()
-			if humanoid and humanoid.Parent then humanoid:Move(Vector3.zero, true) end
-		end)
-		goRiftConn = nil
+		autoBuyEgg1Conn = nil
+	end)
+end
+
+local autoBuyEgg2 = false
+local autoBuyEgg2Conn = nil
+local function startAutoBuyEgg2()
+	if autoBuyEgg2Conn then return end
+	autoBuyEgg2Conn = task.spawn(function()
+		while autoBuyEgg2 do
+			buyHalloweenEgg("HalloweenEgg2")
+			task.wait(1)
+		end
+		autoBuyEgg2Conn = nil
+	end)
+end
+
+local autoBuyEgg3 = false
+local autoBuyEgg3Conn = nil
+local function startAutoBuyEgg3()
+	if autoBuyEgg3Conn then return end
+	autoBuyEgg3Conn = task.spawn(function()
+		while autoBuyEgg3 do
+			buyHalloweenEgg("HalloweenEgg3")
+			task.wait(1)
+		end
+		autoBuyEgg3Conn = nil
 	end)
 end
 
@@ -2108,6 +2514,7 @@ local function approachWithPetPriority(standPos)
 end
 
 local function farmAllZones()
+	if activityPriorityActive(4) then return end
 	if not autoRun then return end
 	if not hasSelectedEgg() then
 		unlockCharacter()
@@ -2116,10 +2523,12 @@ local function farmAllZones()
 
 	local foundAny = false
 	for _, zone in ipairs(getAllZones()) do
+		if activityPriorityActive(4) then return end
 		if not autoRun then return end
 		local eggsFolder = zone:FindFirstChild("Eggs")
 		if eggsFolder then
 			for _, egg in ipairs(eggsFolder:GetChildren()) do
+				if activityPriorityActive(4) then return end
 				if not autoRun then return end
 				if matchesSelectedName(egg) then
 					local part = getEggPart(egg)
@@ -2149,7 +2558,7 @@ local function farmAllZones()
 							local elapsed = 0
 							local attackCd = 0
 							local lastHealth = humanoid and humanoid.Health or 100
-							while elapsed < timeout do
+							while elapsed < timeout and not activityPriorityActive(4) do
 								if not autoRun then return end
 
 								if not part.Parent then break end
@@ -2236,7 +2645,142 @@ local function farmAllZones()
 	end
 end
 
-local EGG_ALIAS = {
+local autoHauntedHouseConn = nil
+
+local function getHauntedHouseNum(obj)
+	local num = string.match(tostring(obj.Name), "%d+")
+	if num then return tonumber(num) or math.huge end
+	return math.huge
+end
+
+local function collectHauntedHouses()
+	local folder = workspace:FindFirstChild("HauntedHouses")
+	if not folder then return {} end
+	local list = {}
+	for _, child in ipairs(folder:GetChildren()) do
+		local part = getEggPart(child)
+		if part and part.Parent then
+			table.insert(list, { obj = child, part = part, hp = getEggHealth(child), num = getHauntedHouseNum(child) })
+		end
+	end
+	table.sort(list, function(a, b)
+		return a.num < b.num
+	end)
+	return list
+end
+
+local function hasRefreshedLowerTarget(curNum, curObj)
+	local folder = workspace:FindFirstChild("HauntedHouses")
+	if not folder then return false end
+	for _, child in ipairs(folder:GetChildren()) do
+		if child ~= curObj then
+			local num = getHauntedHouseNum(child)
+			if num < curNum then
+				local hpNow = getEggHealth(child)
+				if hpNow == nil or hpNow > 0 then
+					return true
+				end
+			end
+		end
+	end
+	return false
+end
+
+local function startAutoHauntedHouse()
+	if autoHauntedHouseConn then return end
+	autoHauntedHouseConn = task.spawn(function()
+		while autoHauntedHouse do
+			while autoHauntedHouse and activityPriorityActive(2) do
+				task.wait(0.5)
+			end
+			if not autoHauntedHouse then break end
+			local targets = collectHauntedHouses()
+			if #targets == 0 then
+				task.wait(2)
+			else
+				local escaped = false
+				for _, t in ipairs(targets) do
+					if not autoHauntedHouse then break end
+					local part = t.part
+					if not part or not part.Parent then break end
+					local obj = t.obj
+					local hpNow = getEggHealth(obj)
+					if hpNow ~= nil and hpNow <= 0 then break end
+					local hrp = char and char:FindFirstChild("HumanoidRootPart")
+					if not hrp then break end
+					local toObj = part.Position - hrp.Position
+					local flatDir = Vector3.new(toObj.X, 0, toObj.Z)
+					local standPos = part.Position
+					if flatDir.Magnitude >= 1 then
+						standPos = part.Position - flatDir.Unit * 5
+					else
+						standPos = part.Position - Vector3.new(5, 0, 0)
+					end
+					lockUtil.guardZone = nil
+					lockUtil.eggPos = part.Position
+					if not lockUtil.navWalk(standPos, 5, { brake = true }) then break end
+					local timeout = 60
+					local elapsed = 0
+					local lastHealth = humanoid and humanoid.Health or 100
+					local checkTimer = 0
+					while elapsed < timeout and autoHauntedHouse and not activityPriorityActive(2) do
+						if not part.Parent then break end
+						hpNow = getEggHealth(obj)
+						if hpNow ~= nil and hpNow <= 0 then break end
+						local dt = RunService.Heartbeat:Wait()
+						elapsed = elapsed + dt
+						checkTimer = checkTimer + dt
+						if checkTimer >= 2 then
+							checkTimer = 0
+							if hasRefreshedLowerTarget(t.num, obj) then
+								escaped = true
+								break
+							end
+						end
+						local curHealth = humanoid and humanoid.Health or lastHealth
+						local gotHit = curHealth < lastHealth - 0.5
+						lastHealth = curHealth
+						if not gotHit and char then
+							local hh = char:FindFirstChild("HumanoidRootPart")
+							if hh then
+								local dxx = hh.Position.X - standPos.X
+								local dzz = hh.Position.Z - standPos.Z
+								if (dxx * dxx + dzz * dzz) > 144 then gotHit = true end
+							end
+						end
+						if gotHit then
+							lockUtil.placeHover(standPos.X, standPos.Z, (getGroundY(standPos) or standPos.Y), 2)
+							lockCharacter()
+							local settleAtk = 0
+							local settleElapsed = 0
+							while settleElapsed < 0.5 and autoHauntedHouse do
+								if not part.Parent then break end
+								local dt2 = RunService.Heartbeat:Wait()
+								settleElapsed = settleElapsed + dt2
+								settleAtk = settleAtk + dt2
+								if settleAtk >= 0.1 then
+									attackEgg(part)
+									settleAtk = 0
+								end
+							end
+							unlockCharacter()
+						end
+						local h = char and char:FindFirstChild("HumanoidRootPart")
+						if h and part.Parent then
+							h.CFrame = CFrame.lookAt(h.Position, Vector3.new(part.Position.X, h.Position.Y, part.Position.Z))
+						end
+						if part.Parent then attackEgg(part) end
+					end
+					if escaped then break end
+				end
+			end
+			task.wait(0.5)
+		end
+		autoHauntedHouseConn = nil
+	end)
+end
+
+EGG_ALIAS = {
 	["Rock"] = "岩石蛋", ["Stone"] = "岩石蛋",
 	["Forest"] = "森林蛋", ["Wood"] = "森林蛋", ["Grass"] = "森林蛋",
 	["Cactus"] = "仙人掌蛋", ["Desert"] = "仙人掌蛋",
@@ -2266,6 +2810,10 @@ local EGG_ALIAS = {
 	["Plasma"] = "等离子蛋", ["Plasma Egg"] = "等离子蛋",
 	["Nebula"] = "星云蛋", ["Nebula Egg"] = "星云蛋",
 	["Supernova"] = "超新星蛋", ["Supernova Egg"] = "超新星蛋",
+	["Phantom"] = "幽灵蛋", ["Phantom Egg"] = "幽灵蛋",
+	["Skill"] = "技能蛋", ["Skill Egg"] = "技能蛋",
+	["LockedEgg"] = "锁定蛋", ["Locked Egg"] = "锁定蛋",
+	["Skull"] = "骷髅蛋", ["Skull Egg"] = "骷髅蛋", ["Fortune Skull"] = "骷髅蛋", ["Fortune Skull Egg"] = "骷髅蛋",
 }
 
 local eggNameCache = {}
@@ -2565,12 +3113,12 @@ local function removeEsp(obj, cache)
 	cache[obj] = nil
 end
 
-local function updateEsp(cache, isPet)
+local function updateEsp(cache, isPet, refreshText)
 	for obj, cached in pairs(cache) do
 		if not obj.Parent then
 			if cached.billboard then cached.billboard:Destroy() end
 			cache[obj] = nil
-		else
+		elseif refreshText then
 			local text = isPet and buildPetText(obj) or buildEggText(obj)
 			local visible = true
 			if not text then
@@ -2644,9 +3192,11 @@ task.spawn(function()
 end)
 
 task.spawn(function()
+	local tick = 0
 	while true do
 		if petEspEnabled then
-			updateEsp(petEspCache, true)
+			tick = tick + 1
+			updateEsp(petEspCache, true, tick % 10 == 0)
 			refreshPetEsp()
 		end
 		task.wait(0.5)
@@ -2654,10 +3204,14 @@ task.spawn(function()
 end)
 
 task.spawn(function()
+	local tick = 0
 	while true do
 		if eggEspEnabled then
-			updateEsp(eggEspCache, false)
-			refreshEggEsp()
+			tick = tick + 1
+			updateEsp(eggEspCache, false, tick % 10 == 0)
+			if tick % 10 == 5 then
+				refreshEggEsp()
+			end
 		end
 		task.wait(0.5)
 	end
@@ -2667,7 +3221,7 @@ local function doAntiAFKMove()
 	if not humanoid or not humanoid.Parent then return end
 	if humanoid.PlatformStand then return end
 	if humanoid.MoveDirection.Magnitude > 0.1 then return end
-	if autoRun or autoPickup or autoInteract or autoWalkBoss or autoAttackBoss then return end
+	if autoRun or autoPickup or autoInteract or autoHome then return end
 	local act = math.random(1, 5)
 	if act == 1 then
 		humanoid.Jump = true
@@ -2711,6 +3265,84 @@ local function stopAntiAFK()
 	end
 end
 
+local cloneOnHit = true
+local cloneOnHitConn = nil
+local cloneCooldownAt = 0
+
+local function spawnCloneDecoy()
+	if not char or not char.Parent then return end
+	local nowT = os.clock()
+	if nowT < cloneCooldownAt then return end
+	cloneCooldownAt = nowT + 4
+	local clone = nil
+	pcall(function() clone = char:Clone() end)
+	if not clone then return end
+	clone.Name = char.Name .. "Clone"
+	clone.Parent = workspace
+	local hrp = char:FindFirstChild("HumanoidRootPart")
+	if hrp then
+		local rightVec = hrp.CFrame.RightVector
+		local spawnPos = hrp.Position + rightVec * 2
+		local flyVel = rightVec * 5 + Vector3.new(0, 3, 0)
+		pcall(function()
+			clone:PivotTo(CFrame.lookAt(spawnPos, spawnPos + rightVec) * CFrame.Angles(math.rad(-90), 0, 0))
+		end)
+		for _, part in ipairs(clone:GetDescendants()) do
+			if part:IsA("BasePart") then
+				pcall(function()
+					part.AssemblyLinearVelocity = flyVel
+					part.AssemblyAngularVelocity = Vector3.new(1.5, 0, 0)
+				end)
+			end
+		end
+	end
+	local cHum = clone:FindFirstChildOfClass("Humanoid")
+	if cHum then
+		cHum.WalkSpeed = 0
+		cHum.JumpPower = 0
+		cHum.PlatformStand = true
+		pcall(function()
+			cHum.MaxHealth = 1e9
+			cHum.Health = 1e9
+		end)
+	end
+	task.delay(12, function()
+		if clone and clone.Parent then
+			pcall(function() clone:Destroy() end)
+		end
+	end)
+end
+
+local function startCloneOnHit()
+	if cloneOnHitConn then return end
+	cloneOnHitConn = task.spawn(function()
+		while cloneOnHit do
+			if char and char.Parent then
+				local hrp = char:FindFirstChild("HumanoidRootPart")
+				if hrp then
+					local g, d = findNearestGuard(hrp.Position, nil)
+					if g and d <= 10 then
+						spawnCloneDecoy()
+					end
+				end
+			end
+			task.wait(0.25)
+		end
+		cloneOnHitConn = nil
+	end)
+end
+
+local function stopCloneOnHit()
+	cloneOnHit = false
+	if cloneOnHitConn then
+		pcall(function() task.cancel(cloneOnHitConn) end)
+		cloneOnHitConn = nil
+	end
+end
+
+cloneOnHit = true
+startCloneOnHit()
+
 local Window = WindUI:CreateWindow({
 	Title = "打破并偷走一个鸡蛋",
 	Author = "由i制作",
@@ -2745,23 +3377,35 @@ local Tabs = {
 
 local AnnounceTab = Tabs.Announce
 AnnounceTab:Section({ Title = "公告", TextXAlignment = "Left", TextSize = 17 })
+AnnounceTab:Paragraph({ Title = "10月26日", Desc = "增加新区域蛋和新的宠物品质 更新万圣节活动 提升传回成功率 修复透视蛋卡顿" })
 AnnounceTab:Paragraph({ Title = "10月13日", Desc = "已修复传送宠物 增加新区域蛋和宠物和品质 防卡顿升级" })
 AnnounceTab:Paragraph({ Title = "10月11日", Desc = "传送回拿宠物已绕过反作弊" })
 
 local ActivityTab = Tabs.Activity
-ActivityTab:Section({ Title = "恶魔之王", TextXAlignment = "Left", TextSize = 17 })
-ActivityTab:Toggle({ Title = "自动走到恶魔之王", Default = false, Callback = function(v)
-	autoWalkBoss = v
-	if v then startAutoWalkBoss() end
+ActivityTab:Section({ Title = "活动", TextXAlignment = "Left", TextSize = 17 })
+ActivityTab:Toggle({ Title = "自动打糖果", Default = false, Callback = function(v)
+	autoCandy = v
+	if v then startAutoCandy() end
 end })
-ActivityTab:Toggle({ Title = "自动攻击恶魔之王", Default = false, Callback = function(v)
-	autoAttackBoss = v
-	if v then startAutoAttackBoss() end
+ActivityTab:Toggle({ Title = "自动收集糖果玉米", Default = false, Callback = function(v)
+	autoCorn = v
+	if v then startAutoCorn() end
 end })
-ActivityTab:Section({ Title = "裂缝", TextXAlignment = "Left", TextSize = 17 })
-ActivityTab:Toggle({ Title = "自动前往裂缝", Default = false, Callback = function(v)
-	autoGoRift = v
-	if v then startAutoGoRift() end
+ActivityTab:Toggle({ Title = "自动打鬼屋", Default = false, Callback = function(v)
+	autoHauntedHouse = v
+	if v then startAutoHauntedHouse() end
+end })
+ActivityTab:Toggle({ Title = "自动购买南瓜园蛋", Default = false, Callback = function(v)
+	autoBuyEgg1 = v
+	if v then startAutoBuyEgg1() end
+end })
+ActivityTab:Toggle({ Title = "自动购买稻草人蛋", Default = false, Callback = function(v)
+	autoBuyEgg2 = v
+	if v then startAutoBuyEgg2() end
+end })
+ActivityTab:Toggle({ Title = "自动购买骨之密室蛋", Default = false, Callback = function(v)
+	autoBuyEgg3 = v
+	if v then startAutoBuyEgg3() end
 end })
 
 local PurchaseTab = Tabs.Purchase
@@ -2776,7 +3420,7 @@ autoBuyPickaxeToggle = PurchaseTab:Toggle({ Title = "自动购买稿子", Defaul
 	if v then startAutoBuyPickaxe() end
 end })
 for i, item in ipairs(PICKAXE_SHOP) do
-	PurchaseTab:Button({ Title = item.cn .. "稿子", Callback = function()
+	PurchaseTab:Button({ Title = (item.title or (item.cn .. "稿子")), Callback = function()
 		buyPickaxe(i)
 	end })
 end
@@ -2786,7 +3430,7 @@ autoBuyTrailToggle = PurchaseTab:Toggle({ Title = "自动购买踪迹", Default 
 	if v then startAutoBuyTrail() end
 end })
 for i, item in ipairs(TRAIL_SHOP) do
-	PurchaseTab:Button({ Title = item.cn .. "踪迹", Callback = function()
+	PurchaseTab:Button({ Title = (item.title or (item.cn .. "踪迹")), Callback = function()
 		buyTrail(i)
 	end })
 end
@@ -2811,6 +3455,13 @@ local function deleteZoneDecor()
 		{ "Zone9", "Stars" },
 		{ "Zone8", "Build" },
 		{ "Zone7", "Build" },
+		{ "Zone11", "Mountains" },
+		{ "Zone11", "Pillars" },
+		{ "Zone11", "Rock" },
+		{ "Zone11", "T" },
+		{ "Zone11", "Tree" },
+		{ "Zone11", "Waal" },
+		{ "Zone11", "Bone" },
 	}
 	for _, spec in ipairs(extraPaths) do
 		local zone = zoneBuilds:FindFirstChild(spec[1])
@@ -2890,7 +3541,7 @@ local function applyGraphicsLow()
 		end
 	end)
 end
-local FX_CLASSES = {
+FX_CLASSES = {
 	ParticleEmitter = true, Beam = true, Fire = true, Smoke = true,
 	Sparkles = true, Trail = true, Explosion = true, Sound = true,
 	PointLight = true, SurfaceLight = true, SpotLight = true,
@@ -2910,6 +3561,7 @@ local function hideChar(ch)
 		end
 	end
 end
+
 local function startAntiLag()
 	if antiLagTask then return end
 	pcall(function() deleteZoneDecor() end)
@@ -2948,9 +3600,9 @@ MainTab:Toggle({ Title = "自动拿宠物", Default = false, Callback = function
 	autoPickup = v
 	if not v and not autoRun then unlockCharacter() end
 end })
-MainTab:Dropdown({ Title = "拿宠物回家方式", Values = { "走回", "传送" }, Value = "走回", Callback = function(v)
+MainTab:Dropdown({ Title = "拿宠物回家方式", Values = { "走回(安全)", "传回(有风险)" }, Value = "走回(安全)", Callback = function(v)
 	if type(v) == "table" then return end
-	homeMethod = (v == "传送") and "teleport" or "walk"
+	homeMethod = (v == "传回(有风险)") and "teleport" or "walk"
 end })
 
 MainTab:Dropdown({ Title = "选择蛋类型", Values = EGG_OPTIONS, Value = {}, Multi = true, AllowNone = true, Callback = function(Values)
@@ -3101,7 +3753,9 @@ end)
 
 task.spawn(function()
 	while true do
-		if autoPickup then
+		if activityPriorityActive(4) then
+			task.wait(0.2)
+		elseif autoPickup then
 			local pet = findAnyPetToPickup()
 			if pet then
 				moveToPetAndBack(pet)
@@ -3138,7 +3792,7 @@ task.spawn(function()
 						end
 					end
 					if bestPart then
-						Event:FireServer(bestPart, 1)
+						if Event then Event:FireServer(bestPart, 1) end
 					end
 				end
 			end
